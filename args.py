@@ -1,0 +1,27 @@
+args = dict(
+        seed=777,
+        gamma=.99,
+        lambda_=1., # gae lambda coef
+        lr=2e-3,
+        linear_decay=True,
+        value_loss_coef=.4,
+        entropy_coef=0.,
+        eval_every=10,
+        wb_flag=True, # log to wandb or not
+        hidden_sizes=(64, 64,),
+        env_name='HalfCheetah-v3',
+        num_envs=4,
+        num_steps=32,
+        num_timesteps=2_000_000,
+        max_grad_norm=.5,
+        rms_beta2=.99,
+        rms_eps=1e-5,
+        init_log_std=0., 
+        norm_r=True,
+        norm_obs=True,
+        normalize_advantages=False,
+        prefix='STANDART_', # prefix for wandb name
+        device='1',
+        allocate_memory='.15', 
+        wandb_proj_name='test_jax_a2c'
+    )
