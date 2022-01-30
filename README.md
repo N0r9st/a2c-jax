@@ -7,4 +7,5 @@ A2C uses a diagonal gaussian policy with state-independent action distribution v
 
 ## HalfCheetah-v3
 Two runs with different seeds. Run with lower score (blue) arrived at a relatively rare local optimum.
-![Getting Started](./images/img0.png)
+
+<img src='./images/img0.png' width='500'>
