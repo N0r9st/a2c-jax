@@ -40,8 +40,12 @@ cmd_args = parse_args()
 
 def update(args, cmd_args):
     args['wandb_proj_name'] = cmd_args.wandb_project
+    
     if cmd_args.wandb_project:
-        
+        args['wandb_flag'] = True
+    else:
+        args['wandb_flag'] = False
+
     args['env_name'] = cmd_args.environment
     return args
 
