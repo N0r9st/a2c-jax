@@ -65,6 +65,8 @@ def main(args: dict):
         wandb.init(project=args['wandb_proj_name'], config=args)
         wandb.run.name = args['prefix'] + '' + wandb.run.name
 
+    updates = 0
+
     for i in range(0, args['num_timesteps'], args['num_envs'] * args['num_steps']):
         policy_fn = functools.partial(_policy_fn, params=state.params)
         if state.step%args['eval_every']==0:
@@ -92,11 +94,13 @@ def main(args: dict):
             trajectories, 
             value_loss_coef=args['value_loss_coef'], 
             entropy_coef=args['entropy_coef'], 
+
             normalize_advantages=args['normalize_advantages'])
-        if args['wb_flag']:
-            wandb.log({'loss': loss.item(), 'timestep': i,})
+        updates += 1
+
+        if args['wb_flag'] and (updates % args['log_freq']):
+            wandb.log({'loss': loss.item(), 'timestep': i, 'updates': updates}, commit=False)
             loss_dict = jax.tree_map(lambda x: x.item(), loss_dict)
-            loss_dict['timestep'] = i
             wandb.log(loss_dict)
 
 if __name__=='__main__':

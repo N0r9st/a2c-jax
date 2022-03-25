@@ -33,7 +33,8 @@ args = dict(
         prefix='', # prefix for wandb name
         device='0',
         allocate_memory='.15', 
-        wandb_proj_name='test_jax_a2c'
+        wandb_proj_name='test_jax_a2c',
+        log_freq=5,
     )
 
 cmd_args = parse_args()
