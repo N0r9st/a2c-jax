@@ -42,9 +42,9 @@ def update(args, cmd_args):
     args['wandb_proj_name'] = cmd_args.wandb_project
     
     if cmd_args.wandb_project:
-        args['wandb_flag'] = True
+        args['wb_flag'] = True
     else:
-        args['wandb_flag'] = False
+        args['wb_flag'] = False
 
     args['env_name'] = cmd_args.environment
     return args
