@@ -30,7 +30,6 @@ args = dict(
         norm_r=True,
         norm_obs=True,
         normalize_advantages=False,
-        prefix='', # prefix for wandb name
         device='0',
         allocate_memory='.15', 
         wandb_proj_name='test_jax_a2c',

@@ -63,7 +63,6 @@ def main(args: dict):
     next_obs_and_dones = (next_obs, np.array(next_obs.shape[0]*[False]))
     if args['wb_flag']:
         wandb.init(project=args['wandb_proj_name'], config=args)
-        wandb.run.name = args['prefix'] + '' + wandb.run.name
 
     updates = 0
 

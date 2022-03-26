@@ -2,3 +2,7 @@ __pycache__/
 */__pycache__/
 wandb/
 *.ipynb
+dummy_args.py
+*.ipynb
+*/*.ipynb
+trash.txt
