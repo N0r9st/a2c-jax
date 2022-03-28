@@ -13,11 +13,14 @@ from jax_a2c.evaluation import eval
 from jax_a2c.policy import DiagGaussianPolicy
 from jax_a2c.utils import (collect_experience, create_train_state,
                            process_experience)
+from jax_a2c.saving import save_state, load_state
 
 
 def main(args: dict):
 
     num_transition_steps = args['num_timesteps']//(args['num_envs'] * args['num_steps'])
+    wandb_run_id = None
+    start_update = 0
 
     envs = make_vec_env(
         name=args['env_name'], 
@@ -61,18 +64,36 @@ def main(args: dict):
     eval_envs.training = False
     next_obs = envs.reset()
     next_obs_and_dones = (next_obs, np.array(next_obs.shape[0]*[False]))
+
+    if args['load']:
+        chkpnt = args['load']
+        if os.path.exists(args['load']):
+            print(f"Loading checkpoint {chkpnt}")
+            state, additional = load_state(chkpnt, state)
+            wandb_run_id = additional['wandb_run_id']
+            start_update = state.step
+        else:
+            print(f"Checkpoint {chkpnt} not found!")
+
     if args['wb_flag']:
-        wandb.init(project=args['wandb_proj_name'], config=args)
+        if wandb_run_id is None:
+            wandb.init(project=args['wandb_proj_name'], config=args)
+            wandb_run_id = wandb.run.id
+        else:
+            wandb.init(project=args['wandb_proj_name'], config=args, id=wandb_run_id, resume="allow")
 
-    updates = 0
+    total_updates = args['num_timesteps'] // ( args['num_envs'] * args['num_steps'])
 
-    for i in range(0, args['num_timesteps'], args['num_envs'] * args['num_steps']):
+    def get_timestep(current_update):
+        return current_update * args['num_envs'] * args['num_steps']
+
+    for current_update in range(start_update, total_updates):
         policy_fn = functools.partial(_policy_fn, params=state.params)
         if state.step%args['eval_every']==0:
             eval_envs.obs_rms = deepcopy(envs.obs_rms)
             _, eval_return = eval(state.apply_fn, state.params, eval_envs)
             if args['wb_flag']:
-                wandb.log({'score': eval_return, 'timestep': i,})
+                wandb.log({'evaluation/score': eval_return}, commit=False,)
             print(f'Eval return: {eval_return}')
 
         prngkey, _ = jax.random.split(prngkey)
@@ -95,12 +116,18 @@ def main(args: dict):
             entropy_coef=args['entropy_coef'], 
 
             normalize_advantages=args['normalize_advantages'])
-        updates += 1
 
-        if args['wb_flag'] and (updates % args['log_freq']):
-            wandb.log({'loss': loss.item(), 'timestep': i, 'updates': updates}, commit=False)
+        if args['wb_flag'] and (current_update % args['log_freq']):
+            wandb.log({'time/timestep': get_timestep(current_update), 'time/updates': current_update}, commit=False)
+
             loss_dict = jax.tree_map(lambda x: x.item(), loss_dict)
-            wandb.log(loss_dict)
+            loss_dict['loss'] = loss.item()
+            wandb.log({'training/' + k: v for k, v in loss_dict.items()})
+
+        if args['save'] and (current_update % args['save_every']):
+            additional = {}
+            additional['wandb_run_id'] = wandb_run_id
+            save_state(args['save'], state, additional)
 
 if __name__=='__main__':
 

@@ -6,3 +6,4 @@ dummy_args.py
 *.ipynb
 */*.ipynb
 trash.txt
+trained_models/

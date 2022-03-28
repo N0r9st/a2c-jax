@@ -108,7 +108,7 @@ def create_env(name: str = 'HalfCheetah-v3', env_state: Optional[MjSimState] = N
         env.seed(seed)
     return env
 
-def make_env_fn(name: str = 'HalfCheetahEnv', env_state: Optional[MjSimState] = None, seed=None):
+def make_env_fn(name: str = 'HalfCheetah-v3', env_state: Optional[MjSimState] = None, seed=None):
     env_fn = functools.partial(create_env, name=name, env_state=env_state, seed=seed)
     return env_fn
 
