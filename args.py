@@ -1,3 +1,18 @@
+import argparse
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--wandb-project', type=str, default=None)
+    parser.add_argument('--environment', type=str, default='HalfCheetah-v3')
+    parser.add_argument('--device', type=str, default='0')
+    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--load', type=str, default=None)
+    parser.add_argument('--save', type=str, default=None)
+    parser.add_argument('--save-every', type=int, default=100)
+    args = parser.parse_args()
+    return args
+
+
 args = dict(
         seed=777,
         gamma=.99,
@@ -6,7 +21,7 @@ args = dict(
         linear_decay=True,
         value_loss_coef=.4,
         entropy_coef=0.,
-        eval_every=10,
+        eval_every=50,
         wb_flag=True, # log to wandb or not
         hidden_sizes=(64, 64,),
         env_name='HalfCheetah-v3',
@@ -20,8 +35,29 @@ args = dict(
         norm_r=True,
         norm_obs=True,
         normalize_advantages=False,
-        prefix='STANDART_', # prefix for wandb name
-        device='1',
+        device='0',
         allocate_memory='.15', 
-        wandb_proj_name='test_jax_a2c'
+        wandb_proj_name='test_jax_a2c',
+        log_freq=50,
     )
+
+cmd_args = parse_args()
+
+def update(args, cmd_args):
+    args['wandb_proj_name'] = cmd_args.wandb_project
+    
+    if cmd_args.wandb_project:
+        args['wb_flag'] = True
+    else:
+        args['wb_flag'] = False
+
+    args['env_name'] = cmd_args.environment
+    args['device'] = cmd_args.device
+    args['seed'] = cmd_args.seed
+
+    args['load'] = cmd_args.load
+    args['save'] = cmd_args.save
+    args['save_every'] = cmd_args.save_every
+    return args
+
+args = update(args, cmd_args)
