@@ -23,6 +23,7 @@ def main(args: dict):
     wandb_run_id = None
     start_update = 0
     timestep = 0
+    epoch_time = 0
 
     envs = make_vec_env(
         name=args['env_name'], 
@@ -107,7 +108,7 @@ def main(args: dict):
             _, eval_return = eval(state.apply_fn, state.params, eval_envs)
             if args['wb_flag']:
                 wandb.log({'evaluation/score': eval_return}, commit=False,)
-            print(f'Updates {current_update}/{total_updates}. Eval return: {eval_return}')
+            print(f'Updates {current_update}/{total_updates}. Eval return: {eval_return}. Epoch_time: {epoch_time}.')
 
         prngkey, _ = jax.random.split(prngkey)
         next_obs_and_dones, experience = collect_experience(
@@ -144,21 +145,22 @@ def main(args: dict):
 
             normalize_advantages=args['normalize_advantages'])
 
+        if args['save'] and (current_update % args['save_every']):
+            additional = {}
+            additional['wandb_run_id'] = wandb_run_id
+            save_state(args['save'], state, additional)
+
         if args['wb_flag'] and (current_update % args['log_freq']):
+            epoch_time = time.time() - st
             wandb.log({
                 'time/timestep': timestep, 
                 'time/updates': current_update, 
-                'time/time': time.time() - st}, 
+                'time/time': epoch_time}, 
                 commit=False)
 
             loss_dict = jax.tree_map(lambda x: x.item(), loss_dict)
             loss_dict['loss'] = loss.item()
             wandb.log({'training/' + k: v for k, v in loss_dict.items()})
-
-        if args['save'] and (current_update % args['save_every']):
-            additional = {}
-            additional['wandb_run_id'] = wandb_run_id
-            save_state(args['save'], state, additional)
 
 if __name__=='__main__':
 
