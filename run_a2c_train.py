@@ -1,6 +1,7 @@
 import functools
 import os
 from copy import deepcopy
+import time
 
 import jax
 import numpy as np
@@ -97,7 +98,9 @@ def main(args: dict):
 
     total_updates = args['num_timesteps'] // ( args['num_envs'] * args['num_steps'])
 
+
     for current_update in range(start_update, total_updates):
+        st = time.time()
         policy_fn = functools.partial(_policy_fn, params=state.params)
         if state.step%args['eval_every']==0:
             eval_envs.obs_rms = deepcopy(envs.obs_rms)
@@ -131,7 +134,6 @@ def main(args: dict):
                 policy_fn=policy_fn,
                 max_steps=args['L'])
 
-        print(len(trajectories[0]))
         timestep += len(trajectories[0])
             
         state, (loss, loss_dict) = step(
@@ -143,7 +145,11 @@ def main(args: dict):
             normalize_advantages=args['normalize_advantages'])
 
         if args['wb_flag'] and (current_update % args['log_freq']):
-            wandb.log({'time/timestep': timestep, 'time/updates': current_update}, commit=False)
+            wandb.log({
+                'time/timestep': timestep, 
+                'time/updates': current_update, 
+                'time/time': time.time() - st}, 
+                commit=False)
 
             loss_dict = jax.tree_map(lambda x: x.item(), loss_dict)
             loss_dict['loss'] = loss.item()
