@@ -12,7 +12,7 @@ from jax_a2c.env_utils import make_vec_env
 from jax_a2c.evaluation import eval
 from jax_a2c.policy import DiagGaussianPolicy
 from jax_a2c.utils import (collect_experience, create_train_state,
-                           process_experience)
+                           process_experience, k_mc_rollouts_trajectories)
 from jax_a2c.saving import save_state, load_state
 
 
@@ -21,12 +21,23 @@ def main(args: dict):
     num_transition_steps = args['num_timesteps']//(args['num_envs'] * args['num_steps'])
     wandb_run_id = None
     start_update = 0
+    timestep = 0
 
     envs = make_vec_env(
         name=args['env_name'], 
         num=args['num_envs'], 
         norm_r=args['norm_r'], 
         norm_obs=args['norm_obs'],)
+
+    if args['type'] == 'K-rollouts':
+        k_envs = make_vec_env(
+            name=args['env_name'], 
+            num=args['num_envs']*args['K'], 
+            norm_r=args['norm_r'], 
+            norm_obs=args['norm_obs'],
+            )
+        k_envs.obs_rms = envs.obs_rms
+        k_envs.ret_rms = envs.ret_rms
 
     eval_envs = make_vec_env(
             name=args['env_name'], 
@@ -72,6 +83,8 @@ def main(args: dict):
             state, additional = load_state(chkpnt, state)
             wandb_run_id = additional['wandb_run_id']
             start_update = state.step
+
+            timestep = state.step * args['num_envs'] * args['num_steps'] + state.step * args['K'] * args['L']
         else:
             print(f"Checkpoint {chkpnt} not found!")
 
@@ -84,9 +97,6 @@ def main(args: dict):
 
     total_updates = args['num_timesteps'] // ( args['num_envs'] * args['num_steps'])
 
-    def get_timestep(current_update):
-        return current_update * args['num_envs'] * args['num_steps']
-
     for current_update in range(start_update, total_updates):
         policy_fn = functools.partial(_policy_fn, params=state.params)
         if state.step%args['eval_every']==0:
@@ -94,7 +104,7 @@ def main(args: dict):
             _, eval_return = eval(state.apply_fn, state.params, eval_envs)
             if args['wb_flag']:
                 wandb.log({'evaluation/score': eval_return}, commit=False,)
-            print(f'Eval return: {eval_return}')
+            print(f'Updates {current_update}/{total_updates}. Eval return: {eval_return}')
 
         prngkey, _ = jax.random.split(prngkey)
         next_obs_and_dones, experience = collect_experience(
@@ -104,10 +114,25 @@ def main(args: dict):
             num_steps=args['num_steps'], 
             policy_fn=policy_fn,)
 
-        trajectories = process_experience(
-            experience=experience,
-            gamma=args['gamma'],
-            lambda_=args['lambda_'])
+        if args['type'] == 'standart':
+            trajectories = process_experience(
+                experience=experience,
+                gamma=args['gamma'],
+                lambda_=args['lambda_'])
+
+                
+        elif args['type'] == 'K-rollouts':
+            prngkey, _ = jax.random.split(prngkey)
+            trajectories = k_mc_rollouts_trajectories(
+                prngkey=prngkey,
+                experience=experience,
+                gamma=args['gamma'],
+                k_envs=k_envs,
+                policy_fn=policy_fn,
+                max_steps=args['L'])
+
+        print(len(trajectories[0]))
+        timestep += len(trajectories[0])
             
         state, (loss, loss_dict) = step(
             state, 
@@ -118,7 +143,7 @@ def main(args: dict):
             normalize_advantages=args['normalize_advantages'])
 
         if args['wb_flag'] and (current_update % args['log_freq']):
-            wandb.log({'time/timestep': get_timestep(current_update), 'time/updates': current_update}, commit=False)
+            wandb.log({'time/timestep': timestep, 'time/updates': current_update}, commit=False)
 
             loss_dict = jax.tree_map(lambda x: x.item(), loss_dict)
             loss_dict['loss'] = loss.item()

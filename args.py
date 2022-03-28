@@ -1,5 +1,5 @@
 import argparse
-
+possible_types = ['standart', 'K-rollouts']
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--wandb-project', type=str, default=None)
@@ -9,6 +9,11 @@ def parse_args():
     parser.add_argument('--load', type=str, default=None)
     parser.add_argument('--save', type=str, default=None)
     parser.add_argument('--save-every', type=int, default=100)
+
+    parser.add_argument('--type', type=str, default='standart',)
+
+    parser.add_argument('--K', type=int, default=0)
+    parser.add_argument('--L', type=int, default=0)
     args = parser.parse_args()
     return args
 
@@ -58,6 +63,17 @@ def update(args, cmd_args):
     args['load'] = cmd_args.load
     args['save'] = cmd_args.save
     args['save_every'] = cmd_args.save_every
+
+    assert cmd_args.type in possible_types
+    args['type'] = cmd_args.type
+
+    args['K'] = cmd_args.K
+    args['L'] = cmd_args.L
+
+    if args['type']=='standart':
+        args['K'] = 0
+        args['L'] = 0
+
     return args
 
 args = update(args, cmd_args)
