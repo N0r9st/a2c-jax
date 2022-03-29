@@ -141,7 +141,7 @@ def process_experience(
     return trajectories
 
 @functools.partial(jax.jit, static_argnums=(3, 4))
-def process_rewards(dones, rewards, bootstrapped_values, gamma, K):
+def process_rewards(dones, rewards, bootstrapped_values, gamma):
     masks = jnp.cumprod((1-dones)*gamma, axis=0)/gamma
     k_returns = (rewards*masks[:-1]).sum(axis=0) + bootstrapped_values * masks[-1]
     return k_returns

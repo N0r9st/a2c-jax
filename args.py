@@ -1,5 +1,5 @@
 import argparse
-possible_types = ['standart', 'K-rollouts']
+possible_types = ['standart', 'K-rollouts', 'KM-rollouts']
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--wandb-project', type=str, default=None)
@@ -14,6 +14,7 @@ def parse_args():
 
     parser.add_argument('--K', type=int, default=0)
     parser.add_argument('--L', type=int, default=0)
+    parser.add_argument('--M', type=int, default=0)
     args = parser.parse_args()
     return args
 
@@ -69,10 +70,12 @@ def update(args, cmd_args):
 
     args['K'] = cmd_args.K
     args['L'] = cmd_args.L
+    args['M'] = cmd_args.L
 
     if args['type']=='standart':
         args['K'] = 0
         args['L'] = 0
+        args['M'] = 0
 
     return args
 

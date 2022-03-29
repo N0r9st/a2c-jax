@@ -1,4 +1,4 @@
-from utils import get_mc_returns, process_rewards
+from jax_a2c.utils import get_mc_returns, process_rewards
 import jax
 import jax.numpy as jnp
 
@@ -58,7 +58,7 @@ def k_mc_rollouts_trajectories(prngkey, k_envs, experience, policy_fn, gamma, ma
         ds = jnp.stack(ds)
         rewards_list = jnp.stack(rewards_list)
 
-        kn_returns = process_rewards(ds, rewards_list, bootstrapped_values[..., 0], gamma, K)
+        kn_returns = process_rewards(ds, rewards_list, bootstrapped_values[..., 0], gamma)
         rep_returns.append(kn_returns)
         rep_actions.append(actions_list[0])
 
