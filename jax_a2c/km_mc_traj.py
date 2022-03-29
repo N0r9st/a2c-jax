@@ -10,6 +10,8 @@ def km_mc_rollouts_trajectories(prngkey, k_envs, experience, policy_fn, gamma, K
     dones = experience.dones
     states = experience.states
 
+    num_envs = experience.observations.shape[1]
+
 
     rep_returns = []
     rep_actions = []
@@ -31,9 +33,7 @@ def km_mc_rollouts_trajectories(prngkey, k_envs, experience, policy_fn, gamma, K
 
         # COLLECTING ------------
         k_envs.set_state(state)
-        actions_list = []
         rewards_list = []
-        values_list = []
         ds = [done]
 
         cumdones = jnp.zeros(shape=(next_ob.shape[0],))
@@ -42,12 +42,13 @@ def km_mc_rollouts_trajectories(prngkey, k_envs, experience, policy_fn, gamma, K
             ob = next_ob
             _, prngkey = jax.random.split(prngkey)
             if l == 0:
-                _, acts = policy_fn(prngkey, ob[:K]) # acts: K * num_envs
+                _, acts = policy_fn(prngkey, ob[:K*num_envs]) # acts: K * num_envs
+                rep_actions.append(acts)
                 acts = jnp.concatenate([acts for _ in range(M)], axis=0) # acts: M * K * num_envs
+                
             else:
                 _, acts = policy_fn(prngkey, ob) 
             next_ob, rews, d, info = k_envs.step(acts)
-            actions_list.append(acts)
             rewards_list.append(rews)
             ds.append(d)
             iterations += 1
@@ -56,14 +57,12 @@ def km_mc_rollouts_trajectories(prngkey, k_envs, experience, policy_fn, gamma, K
                 break
 
         bootstrapped_values, _ = policy_fn(prngkey, ob) 
-        values_list.append(bootstrapped_values[..., 0])
         ds = jnp.stack(ds)
         rewards_list = jnp.stack(rewards_list)
 
         kn_returns = process_rewards(ds, rewards_list, bootstrapped_values[..., 0], gamma)
         kn_returns = kn_returns.reshape(M, kn_returns.shape[0]//M).mean(axis=0)
         rep_returns.append(kn_returns)
-        rep_actions.append(actions_list[0][:K])
 
     rep_values = jnp.concatenate([values for _ in range(K)], axis=1)
     rep_actions = jnp.stack(rep_actions)

@@ -26,6 +26,7 @@ def main(args: dict):
     start_update = 0
     timestep = 0
     epoch_times = []
+    epoch_time = 0
 
     envs = make_vec_env(
         name=args['env_name'], 
@@ -98,12 +99,12 @@ def main(args: dict):
             wandb_run_id = additional['wandb_run_id']
             start_update = state.step
 
-            timestep = state.step * args['num_envs'] * args['num_steps'] + state.step * args['K'] * args['L']
+            timestep = state.step * args['num_envs'] * args['num_steps'] + state.step * args['K'] * args['L'] * args['M']
 
             envs.obs_rms = deepcopy(additional['obs_rms'])
             envs.ret_rms = deepcopy(additional['ret_rms'])
 
-            if args['type'] == 'K-rollouts':
+            if args['type'] == 'K-rollouts' or args['type'] == 'KM-rollouts':
                 k_envs.obs_rms = envs.obs_rms
                 k_envs.ret_rms = envs.ret_rms
         else:
@@ -127,7 +128,7 @@ def main(args: dict):
             _, eval_return = eval(state.apply_fn, state.params, eval_envs)
             if args['wb_flag']:
                 wandb.log({'evaluation/score': eval_return}, commit=False,)
-            print(f'Updates {current_update}/{total_updates}. Eval return: {eval_return}. Epoch_time: {np.mean(epoch_times)}.')
+            print(f'Updates {current_update}/{total_updates}. Eval return: {eval_return}. Epoch_time: {epoch_time}.')
 
         prngkey, _ = jax.random.split(prngkey)
         next_obs_and_dones, experience = collect_experience(
@@ -182,11 +183,12 @@ def main(args: dict):
             save_state(args['save'], state, additional)
 
         epoch_times.append(time.time() - st)
+        epoch_time = np.mean(epoch_times)
         if args['wb_flag'] and (current_update % args['log_freq']):
             wandb.log({
                 'time/timestep': timestep, 
                 'time/updates': current_update, 
-                'time/time': np.mean(epoch_times)}, 
+                'time/time': epoch_time}, 
                 commit=False)
             epoch_times = []
 

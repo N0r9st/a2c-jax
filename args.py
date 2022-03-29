@@ -77,6 +77,9 @@ def update(args, cmd_args):
         args['L'] = 0
         args['M'] = 0
 
+    if args['type']=='K-rollouts':
+        args['M'] = 1
+
     return args
 
 args = update(args, cmd_args)
