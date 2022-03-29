@@ -87,6 +87,13 @@ def main(args: dict):
             start_update = state.step
 
             timestep = state.step * args['num_envs'] * args['num_steps'] + state.step * args['K'] * args['L']
+
+            envs.obs_rms = deepcopy(additional['obs_rms'])
+            envs.ret_rms = deepcopy(additional['ret_rms'])
+
+            if args['type'] == 'K-rollouts':
+                k_envs.obs_rms = envs.obs_rms
+                k_envs.ret_rms = envs.ret_rms
         else:
             print(f"Checkpoint {chkpnt} not found!")
 
@@ -147,6 +154,8 @@ def main(args: dict):
 
         if args['save'] and (current_update % args['save_every']):
             additional = {}
+            additional['obs_rms'] = deepcopy(envs.obs_rms)
+            additional['ret_rms'] = deepcopy(envs.ret_rms)
             additional['wandb_run_id'] = wandb_run_id
             save_state(args['save'], state, additional)
 
