@@ -13,7 +13,8 @@ from jax_a2c.env_utils import make_vec_env
 from jax_a2c.evaluation import eval
 from jax_a2c.policy import DiagGaussianPolicy
 from jax_a2c.utils import (collect_experience, create_train_state,
-                           process_experience, k_mc_rollouts_trajectories)
+                           process_experience)
+from jax_a2c.k_mc_traj import k_mc_rollouts_trajectories
 from jax_a2c.saving import save_state, load_state
 
 
