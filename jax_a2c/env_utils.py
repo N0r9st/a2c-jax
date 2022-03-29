@@ -25,10 +25,10 @@ def _worker(remote, parent_remote, env_fn) -> None:
                 observation = env.reset()
                 remote.send(observation)
             elif cmd == "set":
-                env.sim.set_state(data)
+                env.set_state(data)
                 remote.send(None)
             elif cmd == "get_state":
-                remote.send(env.sim.get_state())
+                remote.send(env.get_state())
             elif cmd == "get_spaces":
                 remote.send((env.observation_space, env.action_space))
             else:
@@ -100,10 +100,10 @@ def _flatten_obs(obs: List[np.array]) -> np.array:
 
 
 def create_env(name: str = 'HalfCheetah-v3', env_state: Optional[MjSimState] = None, seed=None):
-    env = gym.make(name)
+    env = MjTlSavingWrapper(gym.make(name))
     env.reset()
     if env_state:
-        env.sim.set_state(env_state)
+        env.set_state(env_state)
     if seed is not None:
         env.seed(seed)
     return env
@@ -123,3 +123,16 @@ def make_vec_env(
     else:
         env_func_list = [make_env_fn(name=name, env_state=env_state, seed=seed+i) for i in range(num)]
     return VecNormalize(SubprocVecEnv(env_func_list), norm_obs=norm_obs, norm_reward=norm_r)
+
+
+class MjTlSavingWrapper(gym.Wrapper):
+    def __init__(self, env):
+        super(MjTlSavingWrapper, self).__init__(env)
+
+    def get_state(self):
+        return (self.env.sim.get_state(), self.env._elapsed_steps)
+
+    def set_state(self, state):
+        sim_state, self.env._elapsed_steps = state
+        self.env.sim.set_state(sim_state)
+    
