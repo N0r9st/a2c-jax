@@ -42,3 +42,22 @@ class DiagGaussianPolicy(nn.Module):
         action_log_stds = jnp.repeat(action_log_stds.reshape(1,-1), axis=0, repeats=x.shape[0])
         action_log_stds = jnp.clip(action_log_stds, a_min=LOG_SIG_MIN, a_max=LOG_SIG_MAX)
         return values, (action_means, action_log_stds)
+
+class QFunction(nn.Module):
+    """ Simple MLP-based policy,
+    returns: critic's values, (actions' means, actions' log stds)
+    """
+    hidden_sizes: Tuple[int]
+    action_dim: int
+    @nn.compact
+    def __call__(self, obs, actions):
+        x = jnp.concatenate([obs, actions], axis=-1) # (bs, o_dim), (bs, a_dim) -> (bs, o_dim+a_dim)
+        for h_size in self.hidden_sizes:
+            x = nn.Dense(features=h_size, kernel_init=nn.initializers.orthogonal(scale=jnp.sqrt(2)))(x)
+            x = nn.tanh(x)
+        qvalues = nn.Dense(
+            features=1, 
+            kernel_init=nn.initializers.orthogonal(scale=jnp.sqrt(2)), 
+            name='Q_values')(x)
+
+        return qvalues

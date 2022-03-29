@@ -1,5 +1,7 @@
 import argparse
 possible_types = ['standart', 'K-rollouts', 'KM-rollouts']
+algorithms = ['a2c', 'qa2c']
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--wandb-project', type=str, default=None)
@@ -15,6 +17,11 @@ def parse_args():
     parser.add_argument('--K', type=int, default=0)
     parser.add_argument('--L', type=int, default=0)
     parser.add_argument('--M', type=int, default=0)
+
+
+    parser.add_argument('--alg', type=str, default='a2c',)
+    parser.add_argument('--qf-targets', action='store_true', default=False)
+
     args = parser.parse_args()
     return args
 
@@ -26,6 +33,7 @@ args = dict(
         lr=2e-3,
         linear_decay=True,
         value_loss_coef=.4,
+        q_value_loss_coef=.5,
         entropy_coef=0.,
         eval_every=50,
         wb_flag=True, # log to wandb or not
@@ -80,6 +88,10 @@ def update(args, cmd_args):
     if args['type']=='K-rollouts':
         args['M'] = 1
 
+
+    assert cmd_args.alg in algorithms
+    args['alg'] = cmd_args.alg
+    args['qf_targets'] = cmd_args.qf_targets
     return args
 
 args = update(args, cmd_args)

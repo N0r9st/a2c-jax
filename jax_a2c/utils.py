@@ -14,43 +14,11 @@ import jax_a2c.env_utils
 
 Array = Any
 PRNGKey = Any
-ModelClass = Any
+
 Experience = namedtuple(
     'Experience', 
     ['observations', 'actions', 'rewards', 'values', 'dones', 'states'])
 
-def create_train_state(
-    prngkey: PRNGKey, 
-    model: ModelClass,
-    envs: jax_a2c.env_utils.SubprocVecEnv,
-    learning_rate: float, 
-    decaying_lr: bool, 
-    max_norm: float,
-    decay: float,
-    eps: float,
-    train_steps: int = 0) -> TrainState:
-
-    dummy_input = envs.reset()
-    variables = model.init(prngkey, dummy_input)
-    params = variables['params']
-
-    if decaying_lr:
-        lr = optax.linear_schedule(
-            init_value = learning_rate, end_value=0.,
-            transition_steps=train_steps)
-    else:
-        lr = learning_rate
-
-    tx = optax.chain(
-        optax.clip_by_global_norm(max_norm),
-        optax.rmsprop(learning_rate=lr, decay=decay, eps=eps)
-        )
-    state = TrainState.create(
-        apply_fn=model.apply,
-        params=params,
-        tx=tx)
-
-    return state
 
 @jax.jit
 @functools.partial(jax.vmap, in_axes=(1, 1, 1, None, None), out_axes=1)

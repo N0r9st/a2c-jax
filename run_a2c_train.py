@@ -7,12 +7,12 @@ import jax
 import numpy as np
 import wandb
 
-from jax_a2c.a2c import step
+
 from jax_a2c.distributions import sample_action_from_normal as sample_action
 from jax_a2c.env_utils import make_vec_env
 from jax_a2c.evaluation import eval
-from jax_a2c.policy import DiagGaussianPolicy
-from jax_a2c.utils import (collect_experience, create_train_state,
+from jax_a2c.policy import DiagGaussianPolicy, QFunction
+from jax_a2c.utils import (collect_experience,
                            process_experience)
 from jax_a2c.k_mc_traj import k_mc_rollouts_trajectories
 from jax_a2c.km_mc_traj import km_mc_rollouts_trajectories
@@ -20,6 +20,25 @@ from jax_a2c.saving import save_state, load_state
 
 
 def main(args: dict):
+
+    if args['alg']=='a2c':
+        from jax_a2c.a2c import step, create_train_state
+        step = functools.partial(
+            step, 
+            value_loss_coef=args['value_loss_coef'], 
+            entropy_coef=args['entropy_coef'], 
+            normalize_advantages=args['normalize_advantages']
+            )
+    elif args['alg']=='qa2c':
+        from jax_a2c.qa2c import step, create_train_state
+        step = functools.partial(
+            step, 
+            value_loss_coef=args['value_loss_coef'], 
+            q_value_loss_coef=args['q_value_loss_coef'], 
+            entropy_coef=args['entropy_coef'], 
+            normalize_advantages=args['normalize_advantages'],
+            q_value_target=args['qf_targets']
+            )
 
     num_transition_steps = args['num_timesteps']//(args['num_envs'] * args['num_steps'])
     wandb_run_id = None
@@ -68,19 +87,32 @@ def main(args: dict):
         init_log_std=args['init_log_std'])
 
     prngkey = jax.random.PRNGKey(args['seed'])
-
-    state = create_train_state(
-        prngkey,
-        model,
-        envs,
-        learning_rate=args['lr'],
-        decaying_lr=args['linear_decay'],
-        max_norm=args['max_grad_norm'],
-        decay=args['rms_beta2'],
-        eps=args['rms_eps'],
-        train_steps=num_transition_steps
-    )
-    
+    if args['alg']=='a2c':
+        state = create_train_state(
+            prngkey,
+            model,
+            envs,
+            learning_rate=args['lr'],
+            decaying_lr=args['linear_decay'],
+            max_norm=args['max_grad_norm'],
+            decay=args['rms_beta2'],
+            eps=args['rms_eps'],
+            train_steps=num_transition_steps
+        )
+    if args['alg']=='qa2c':
+        q_model = QFunction(hidden_sizes=args['hidden_sizes'], action_dim=envs.action_space.shape[0],)
+        state = create_train_state(
+            prngkey,
+            model,
+            q_model,
+            envs,
+            learning_rate=args['lr'],
+            decaying_lr=args['linear_decay'],
+            max_norm=args['max_grad_norm'],
+            decay=args['rms_beta2'],
+            eps=args['rms_eps'],
+            train_steps=num_transition_steps
+        )
     @jax.jit
     def _policy_fn(prngkey, observation, params):
         values, (means, log_stds) = state.apply_fn({'params': params}, observation)
@@ -122,10 +154,19 @@ def main(args: dict):
 
     for current_update in range(start_update, total_updates):
         st = time.time()
-        policy_fn = functools.partial(_policy_fn, params=state.params)
+
+        if args['alg']=='a2c':
+            _params = state.params
+        elif args['alg']=='qa2c':
+            _params = state.params['params']
+
+        policy_fn = functools.partial(_policy_fn, params=_params)
+
+        
+
         if state.step%args['eval_every']==0:
             eval_envs.obs_rms = deepcopy(envs.obs_rms)
-            _, eval_return = eval(state.apply_fn, state.params, eval_envs)
+            _, eval_return = eval(state.apply_fn, _params, eval_envs)
             if args['wb_flag']:
                 wandb.log({'evaluation/score': eval_return}, commit=False,)
             print(f'Updates {current_update}/{total_updates}. Eval return: {eval_return}. Epoch_time: {epoch_time}.')
@@ -166,14 +207,11 @@ def main(args: dict):
                 M=args['M'])
 
         timestep += len(trajectories[0])
-            
-        state, (loss, loss_dict) = step(
-            state, 
-            trajectories, 
-            value_loss_coef=args['value_loss_coef'], 
-            entropy_coef=args['entropy_coef'], 
-
-            normalize_advantages=args['normalize_advantages'])
+        
+        if args['alg']=='a2c':
+            state, (loss, loss_dict) = step(state, trajectories)
+        elif args['alg']=='qa2c':
+            state, (loss, loss_dict) = step(state, trajectories, prngkey)
 
         if args['save'] and (current_update % args['save_every']):
             additional = {}
