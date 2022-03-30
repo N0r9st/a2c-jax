@@ -29,7 +29,7 @@ args = dict(
         linear_decay=True,
         value_loss_coef=.4,
         entropy_coef=0.,
-        eval_every=50,
+        eval_every=20,
         wb_flag=True, # log to wandb or not
         hidden_sizes=(64, 64,),
         env_name='HalfCheetah-v3',
@@ -46,7 +46,7 @@ args = dict(
         device='0',
         allocate_memory='.15', 
         wandb_proj_name='test_jax_a2c',
-        log_freq=50,
+        log_freq=20,
     )
 
 cmd_args = parse_args()
