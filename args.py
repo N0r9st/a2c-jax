@@ -10,6 +10,8 @@ def parse_args():
     parser.add_argument('--save', type=str, default=None)
     parser.add_argument('--save-every', type=int, default=100)
 
+    parser.add_argument('--num-timesteps', type=int, default=2_000_000)
+
     parser.add_argument('--type', type=str, default='standart',)
 
     parser.add_argument('--K', type=int, default=0)
@@ -70,7 +72,7 @@ def update(args, cmd_args):
 
     args['K'] = cmd_args.K
     args['L'] = cmd_args.L
-    args['M'] = cmd_args.L
+    args['M'] = cmd_args.M
 
     if args['type']=='standart':
         args['K'] = 0
@@ -79,6 +81,8 @@ def update(args, cmd_args):
 
     if args['type']=='K-rollouts':
         args['M'] = 1
+
+    args['num_timesteps'] = cmd_args.num_timesteps
 
     return args
 
