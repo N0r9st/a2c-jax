@@ -127,7 +127,7 @@ def main(args: dict):
             eval_envs.obs_rms = deepcopy(envs.obs_rms)
             _, eval_return = eval(state.apply_fn, state.params, eval_envs)
             if args['wb_flag']:
-                wandb.log({'evaluation/score': eval_return}, commit=False,)
+                wandb.log({'evaluation/score': eval_return}, commit=False, step=current_update)
             print(f'Updates {current_update}/{total_updates}. Eval return: {eval_return}. Epoch_time: {epoch_time}.')
 
         prngkey, _ = jax.random.split(prngkey)
@@ -189,12 +189,12 @@ def main(args: dict):
                 'time/timestep': timestep, 
                 'time/updates': current_update, 
                 'time/time': epoch_time}, 
-                commit=False)
+                commit=False, step=current_update)
             epoch_times = []
 
             loss_dict = jax.tree_map(lambda x: x.item(), loss_dict)
             loss_dict['loss'] = loss.item()
-            wandb.log({'training/' + k: v for k, v in loss_dict.items()})
+            wandb.log({'training/' + k: v for k, v in loss_dict.items()}, step=current_update)
 
 if __name__=='__main__':
 
