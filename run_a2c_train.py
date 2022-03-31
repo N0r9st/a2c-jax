@@ -16,6 +16,7 @@ from jax_a2c.utils import (collect_experience, create_train_state,
                            process_experience)
 from jax_a2c.k_mc_traj import k_mc_rollouts_trajectories
 from jax_a2c.km_mc_traj import km_mc_rollouts_trajectories
+from jax_a2c.km_p_mc_traj import km_p_mc_rollouts_trajectories
 from jax_a2c.saving import save_state, load_state
 
 
@@ -51,6 +52,17 @@ def main(args: dict):
             norm_r=args['norm_r'], 
             norm_obs=args['norm_obs'],
             )
+        k_envs.obs_rms = envs.obs_rms
+        k_envs.ret_rms = envs.ret_rms
+    
+    if args['type'] == 'KM-P-rollouts':
+        k_envs = make_vec_env(
+            name=args['env_name'], 
+            num=args['num_envs']*args['K']*args['M']*args['num_parralel_returns'], 
+            norm_r=args['norm_r'], 
+            norm_obs=args['norm_obs'],
+            )
+
         k_envs.obs_rms = envs.obs_rms
         k_envs.ret_rms = envs.ret_rms
 
@@ -164,6 +176,17 @@ def main(args: dict):
                 max_steps=args['L'],
                 K=args['K'],
                 M=args['M'])
+        elif args['type'] == 'KM-P-rollouts':
+            trajectories = km_p_mc_rollouts_trajectories(
+                prngkey=prngkey,
+                experience=experience,
+                gamma=args['gamma'],
+                k_envs=k_envs,
+                policy_fn=policy_fn,
+                max_steps=args['L'],
+                K=args['K'],
+                M=args['M'],
+                steps_parralel=args['num_parralel_returns'])
 
         timestep += len(trajectories[0])
             
