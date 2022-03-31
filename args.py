@@ -25,6 +25,7 @@ def parse_args():
     parser.add_argument('--num-steps', type=int, default=32)
     parser.add_argument('--num-envs', type=int, default=4)
     parser.add_argument('--value-loss-coef', type=float, default=0.4)
+    parser.add_argument('--gamma', type=float, default=0.99)
 
     args = parser.parse_args()
     return args
@@ -98,6 +99,7 @@ def update(args, cmd_args):
     args['num_steps'] = cmd_args.num_steps
     args['num_envs'] = cmd_args.num_envs
     args['value_loss_coef'] = cmd_args.value_loss_coef
+    args['gamma'] == cmd_args.gamma
     return args
 
 args = update(args, cmd_args)
