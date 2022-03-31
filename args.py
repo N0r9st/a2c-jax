@@ -17,6 +17,15 @@ def parse_args():
     parser.add_argument('--K', type=int, default=0)
     parser.add_argument('--L', type=int, default=0)
     parser.add_argument('--M', type=int, default=0)
+
+
+    parser.add_argument('--layers', type=str, default='64-64')
+    parser.add_argument('--lr', type=float, default=2e-3)
+    parser.add_argument('--linear-decay', action='store_true', default=False)
+    parser.add_argument('--num-steps', type=int, default=32)
+    parser.add_argument('--num-envs', type=int, default=4)
+    parser.add_argument('--value-loss-coef', type=float, default=0.4)
+
     args = parser.parse_args()
     return args
 
@@ -83,7 +92,15 @@ def update(args, cmd_args):
         args['M'] = 1
 
     args['num_timesteps'] = cmd_args.num_timesteps
-
+    args['hidden_sizes'] = tuple(int(x) for x in cmd_args.layers.split('-'))
+    args['lr'] = cmd_args.lr
+    args['linear_decay'] = cmd_args.linear_decay
+    args['num_steps'] = cmd_args.num_steps
+    args['num_envs'] = cmd_args.num_envs
+    args['value_loss_coef'] = cmd_args.value_loss_coef
     return args
 
 args = update(args, cmd_args)
+
+if __name__=='__main__':
+    print(args)
