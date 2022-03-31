@@ -50,7 +50,7 @@ args = dict(
         norm_obs=True,
         normalize_advantages=False,
         device='0',
-        allocate_memory='.15', 
+        allocate_memory='.30', 
         wandb_proj_name='test_jax_a2c',
         log_freq=50,
     )

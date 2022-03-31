@@ -151,4 +151,4 @@ def evaluate_v(prngkey, params, apply_fn, q_fn, observations, num=100):
     q_s = q_fn({'params': params['q_params']}, observations.reshape(num*batch_size, -1), actions)
     v_s = q_s.reshape(num, batch_size, -1).mean(0)
     assert v_s.shape == values.shape, f"{v_s.shape} != {values.shape}"
-    return v_s
+    return v_s[..., 0]
