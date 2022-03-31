@@ -99,7 +99,8 @@ def update(args, cmd_args):
     args['num_steps'] = cmd_args.num_steps
     args['num_envs'] = cmd_args.num_envs
     args['value_loss_coef'] = cmd_args.value_loss_coef
-    args['gamma'] == cmd_args.gamma
+    args['gamma'] = cmd_args.gamma
+
     return args
 
 args = update(args, cmd_args)
