@@ -26,6 +26,8 @@ def parse_args():
     parser.add_argument('--num-envs', type=int, default=4)
     parser.add_argument('--value-loss-coef', type=float, default=0.4)
     parser.add_argument('--gamma', type=float, default=0.99)
+    
+    parser.add_argument('--log-every', type=int, default=20)
 
     args = parser.parse_args()
     return args
@@ -100,6 +102,9 @@ def update(args, cmd_args):
     args['num_envs'] = cmd_args.num_envs
     args['value_loss_coef'] = cmd_args.value_loss_coef
     args['gamma'] = cmd_args.gamma
+
+    args['log_freq'] = cmd_args.log_every
+    args['eval_every'] = cmd_args.log_every
 
     return args
 
