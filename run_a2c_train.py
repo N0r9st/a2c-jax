@@ -47,7 +47,7 @@ def main(args: dict):
         
         k_envs = make_vec_env(
             name=args['env_name'], 
-            num=args['num_envs']*args['K']*args['M'], 
+            num=args['num_k_envs'], 
             norm_r=args['norm_r'], 
             norm_obs=args['norm_obs'],
             )

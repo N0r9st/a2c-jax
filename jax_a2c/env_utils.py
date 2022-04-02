@@ -34,7 +34,7 @@ def _worker(remote, parent_remote, env_fn) -> None:
             else:
                 raise NotImplementedError(f"`{cmd}` is not implemented in the worker")
         except EOFError:
-            print('PROCESS ENDED')
+            # print('PROCESS ENDED')
             break
 
 class SubprocVecEnv:
@@ -135,4 +135,15 @@ class MjTlSavingWrapper(gym.Wrapper):
     def set_state(self, state):
         sim_state, self.env._elapsed_steps = state
         self.env.sim.set_state(sim_state)
-    
+
+def get_env_fns(
+    name: str = 'HalfCheetahEnv', 
+    env_state: Optional[MjSimState] = None, 
+    num: int = 4, norm_r=True, 
+    norm_obs=True, 
+    seed=None):
+    if seed is None:
+        env_func_list = [make_env_fn(name=name, env_state=env_state, seed=seed) for _ in range(num)]
+    else:
+        env_func_list = [make_env_fn(name=name, env_state=env_state, seed=seed+i) for i in range(num)]
+    return env_func_list
