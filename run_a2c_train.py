@@ -27,6 +27,7 @@ def main(args: dict):
     timestep = 0
     epoch_times = []
     epoch_time = 0
+    eval_return = None
 
     envs = make_vec_env(
         name=args['env_name'], 
@@ -126,8 +127,8 @@ def main(args: dict):
         if state.step%args['eval_every']==0:
             eval_envs.obs_rms = deepcopy(envs.obs_rms)
             _, eval_return = eval(state.apply_fn, state.params, eval_envs)
-            if args['wb_flag']:
-                wandb.log({'evaluation/score': eval_return}, commit=False, step=current_update)
+            # if args['wb_flag']:
+                # wandb.log({'evaluation/score': eval_return}, commit=False, step=current_update)
             print(f'Updates {current_update}/{total_updates}. Eval return: {eval_return}. Epoch_time: {epoch_time}.')
 
         prngkey, _ = jax.random.split(prngkey)
@@ -184,11 +185,13 @@ def main(args: dict):
 
         epoch_times.append(time.time() - st)
         epoch_time = np.mean(epoch_times)
-        if args['wb_flag'] and (current_update % args['log_freq']):
+        if args['wb_flag'] and not (current_update % args['log_freq']):
+            print('logging')
             wandb.log({
                 'time/timestep': timestep, 
                 'time/updates': current_update, 
-                'time/time': epoch_time}, 
+                'time/time': epoch_time,
+                'evaluation/score': eval_return}, 
                 commit=False, step=current_update)
             epoch_times = []
 
