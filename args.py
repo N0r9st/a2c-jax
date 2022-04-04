@@ -1,5 +1,5 @@
 import argparse
-possible_types = ['standart', 'K-rollouts', 'KM-rollouts']
+possible_types = ['standart', 'KM-rollouts']
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--wandb-project', type=str, default=None)
@@ -29,6 +29,9 @@ def parse_args():
 
     parser.add_argument('--log-every', type=int, default=20)
     parser.add_argument('--num-k-envs', type=int, default=None)
+
+    
+    parser.add_argument('--num-updates', type=int, default=None)
 
     args = parser.parse_args()
     return args
@@ -111,6 +114,9 @@ def update(args, cmd_args):
         args['num_k_envs'] = args['num_envs'] * args['K'] * args['M']
     else:
         args['num_k_envs'] = cmd_args.num_k_envs
+
+    if cmd_args.num_updates is not None:
+        args['num_timesteps'] = cmd_args.num_updates * args['num_envs'] * args['num_steps']
 
     return args
 

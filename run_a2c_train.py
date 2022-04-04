@@ -99,7 +99,7 @@ def main(args: dict):
             wandb_run_id = additional['wandb_run_id']
             start_update = state.step
 
-            timestep = state.step * args['num_envs'] * args['num_steps'] + state.step * args['K'] * args['L'] * args['M']
+            timestep = state.step * args['num_envs'] * args['num_steps'] # state.step * args['K'] * args['L'] * args['M'] * args['num_envs'] * args['num_steps'] 
 
             envs.obs_rms = deepcopy(additional['obs_rms'])
             envs.ret_rms = deepcopy(additional['ret_rms'])
