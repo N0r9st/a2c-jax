@@ -47,8 +47,10 @@ def _worker(remote, k_remotes, parent_remote, spaces, device) -> None:
 
 def main(args: dict):
     args['async'] = True
-    os.environ['CUDA_VISIBLE_DEVICES'] = args['device']
-    os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = args['allocate_memory']
+    if not args['split_between_devices']:
+        os.environ['CUDA_VISIBLE_DEVICES'] = args['device']
+    # os.environ['CUDA_VISIBLE_DEVICES'] = args['device']
+    # os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = args['allocate_memory']
 
     num_transition_steps = args['num_timesteps']//(args['num_envs'] * args['num_steps'])
     wandb_run_id = None
