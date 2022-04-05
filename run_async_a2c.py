@@ -7,7 +7,6 @@ import jax
 import numpy as np
 import wandb
 import itertools
-import multiprocess as mp
 import multiprocessing as mp
 
 from jax_a2c.a2c import step
