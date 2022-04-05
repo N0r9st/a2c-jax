@@ -1,5 +1,6 @@
 import functools
 import multiprocessing as mp
+import multiprocess as mp 
 from typing import Iterable, List, Optional, Tuple
 
 import gym
@@ -34,20 +35,20 @@ def _worker(remote, parent_remote, env_fn) -> None:
             else:
                 raise NotImplementedError(f"`{cmd}` is not implemented in the worker")
         except EOFError:
-            # print('PROCESS ENDED')
             break
 
 class SubprocVecEnv:
 
-    def __init__(self, env_fns, start_method=None):
+    def __init__(self, env_fns, start_method=None, ctx=None):
 
         self.waiting = False
         self.closed = False
         n_envs = len(env_fns)
-        if start_method is None:
-            forkserver_available = "forkserver" in mp.get_all_start_methods()
-            start_method = "forkserver" if forkserver_available else "spawn"
-        ctx = mp.get_context(start_method)
+        if ctx is None:
+            if start_method is None:
+                forkserver_available = "forkserver" in mp.get_all_start_methods()
+                start_method = "forkserver" if forkserver_available else "spawn"
+            ctx = mp.get_context(start_method)
 
         self.remotes, self.work_remotes = zip(*[ctx.Pipe() for _ in range(n_envs)])
         self.processes = []
@@ -117,12 +118,13 @@ def make_vec_env(
     env_state: Optional[MjSimState] = None, 
     num: int = 4, norm_r=True, 
     norm_obs=True, 
-    seed=None):
+    seed=None,
+    ctx=None):
     if seed is None:
         env_func_list = [make_env_fn(name=name, env_state=env_state, seed=seed) for _ in range(num)]
     else:
         env_func_list = [make_env_fn(name=name, env_state=env_state, seed=seed+i) for i in range(num)]
-    return VecNormalize(SubprocVecEnv(env_func_list), norm_obs=norm_obs, norm_reward=norm_r)
+    return VecNormalize(SubprocVecEnv(env_func_list, ctx=ctx), norm_obs=norm_obs, norm_reward=norm_r)
 
 
 class MjTlSavingWrapper(gym.Wrapper):
@@ -147,3 +149,25 @@ def get_env_fns(
     else:
         env_func_list = [make_env_fn(name=name, env_state=env_state, seed=seed+i) for i in range(num)]
     return env_func_list
+
+class DummySubprocVecEnv(SubprocVecEnv):
+    def __init__(self, remotes,):
+        self.remotes = remotes
+        self.num_envs = len(remotes)
+        self.observation_space = None
+        self.action_space = None
+
+def run_workers(worker, k_envs_fn, args, spaces, ctx):
+    import itertools
+    remotes, work_remotes = zip(*[ctx.Pipe() for _ in range(args['num_workers'])])
+    processes = []
+    for work_remote, remote, env_fn in zip(work_remotes, remotes, itertools.repeat(k_envs_fn)):
+        _k_envs = env_fn()
+        k_remotes = _k_envs.remotes
+        del _k_envs
+        args1 = (work_remote, k_remotes, remote, spaces)
+        process = ctx.Process(target=worker, args=args1, daemon=True)
+        process.start()
+        processes.append(process)
+        work_remote.close()
+    return remotes

@@ -33,6 +33,8 @@ def parse_args():
     
     parser.add_argument('--num-updates', type=int, default=None)
 
+    parser.add_argument('--num-workers', type=int, default=None)
+
     args = parser.parse_args()
     return args
 
@@ -117,6 +119,8 @@ def update(args, cmd_args):
 
     if cmd_args.num_updates is not None:
         args['num_timesteps'] = cmd_args.num_updates * args['num_envs'] * args['num_steps']
+
+    args['num_workers'] = cmd_args.num_workers
 
     return args
 

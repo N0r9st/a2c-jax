@@ -155,3 +155,7 @@ def get_mc_returns(rewards, dones, last_values, gamma):
     for i, rews in reversed(list(enumerate(rewards))):
         returns = returns.at[i].set(rews + returns[i+1]*gamma*masks[i+1])
     return returns
+
+@jax.jit
+def concat_trajectories(traj_list):
+    return [jnp.concatenate(x, axis=0) for x in zip(*traj_list)]
