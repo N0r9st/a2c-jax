@@ -34,6 +34,7 @@ def parse_args():
     parser.add_argument('--num-updates', type=int, default=None)
 
     parser.add_argument('--num-workers', type=int, default=None)
+    parser.add_argument('--split-between-devices', action='store_true', default=False)
 
     args = parser.parse_args()
     return args
@@ -121,6 +122,7 @@ def update(args, cmd_args):
         args['num_timesteps'] = cmd_args.num_updates * args['num_envs'] * args['num_steps']
 
     args['num_workers'] = cmd_args.num_workers
+    args['split_between_devices'] = cmd_args.split_between_devices
 
     return args
 

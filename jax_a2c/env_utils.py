@@ -1,12 +1,15 @@
 import functools
 import multiprocessing as mp
-import multiprocess as mp 
+import itertools
 from typing import Iterable, List, Optional, Tuple
+import collections
 
 import gym
+from matplotlib.style import available
 import numpy as np
 from mujoco_py import MjSimState
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
+import jax
 
 
 def _worker(remote, parent_remote, env_fn) -> None:
@@ -157,15 +160,24 @@ class DummySubprocVecEnv(SubprocVecEnv):
         self.observation_space = None
         self.action_space = None
 
-def run_workers(worker, k_envs_fn, num_workers, spaces, ctx):
-    import itertools
+def run_workers(worker, k_envs_fn, num_workers, spaces, ctx, split_between_devices):
     remotes, work_remotes = zip(*[ctx.Pipe() for _ in range(num_workers)])
     processes = []
-    for work_remote, remote, env_fn in zip(work_remotes, remotes, itertools.repeat(k_envs_fn)):
+    if split_between_devices:
+        available_devices = np.arange(jax.device_count())
+        print(f"{jax.device_count()} devices are available")
+        devices = list(reversed(np.repeat(available_devices, np.ceil(num_workers/len(available_devices)))))
+    else:
+        devices = [0]*num_workers
+
+    where_processes = collections.Counter(devices[:num_workers])
+    print('Processes per device:')
+    print(where_processes)
+    for work_remote, remote, env_fn, device in zip(work_remotes, remotes, itertools.repeat(k_envs_fn), devices):
         _k_envs = env_fn()
         k_remotes = _k_envs.remotes
         del _k_envs
-        args1 = (work_remote, k_remotes, remote, spaces)
+        args1 = (work_remote, k_remotes, remote, spaces, device)
         process = ctx.Process(target=worker, args=args1, daemon=True)
         process.start()
         processes.append(process)

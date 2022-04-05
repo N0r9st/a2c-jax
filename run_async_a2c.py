@@ -25,7 +25,9 @@ def _policy_fn(prngkey, observation, params, apply_fn):
     sampled_actions  = sample_action(prngkey, means, log_stds)
     return values, sampled_actions
 
-def _worker(remote, k_remotes, parent_remote, spaces) -> None:
+def _worker(remote, k_remotes, parent_remote, spaces, device) -> None:
+    print('D:', device)
+    os.environ['CUDA_VISIBLE_DEVICES'] = str(device)
     parent_remote.close()
     k_envs = DummySubprocVecEnv(remotes=k_remotes)
     
@@ -44,6 +46,10 @@ def _worker(remote, k_remotes, parent_remote, spaces) -> None:
             break
 
 def main(args: dict):
+
+    os.environ['CUDA_VISIBLE_DEVICES'] = args['device']
+    os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = args['allocate_memory']
+
     num_transition_steps = args['num_timesteps']//(args['num_envs'] * args['num_steps'])
     wandb_run_id = None
     start_update = 0
@@ -83,7 +89,13 @@ def main(args: dict):
     #            STARTING WORKERS
     #-----------------------------------------
     if args['num_workers'] is not None:
-        remotes = run_workers(_worker, k_envs_fn, args['num_workers'], (envs.observation_space, envs.action_space),ctx)
+        remotes = run_workers(
+            _worker, 
+            k_envs_fn, 
+            args['num_workers'], 
+            (envs.observation_space, envs.action_space),
+            ctx,
+            split_between_devices=args['split_between_devices'])
     # ------------------------------------------
 
     # return
@@ -214,9 +226,6 @@ def main(args: dict):
 if __name__=='__main__':
 
     from args import args
-
-    os.environ['CUDA_VISIBLE_DEVICES'] = args['device']
-    # os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = args['allocate_memory']
 
     ctx = mp.get_context("forkserver")
 
