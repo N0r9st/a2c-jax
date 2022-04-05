@@ -108,11 +108,11 @@ def collect_experience(
     values_list.append(values[..., 0])
 
     experience = Experience(
-        observations=jnp.stack(observations_list),
-        actions=jnp.stack(actions_list),
-        rewards=jnp.stack(rewards_list),
-        values=jnp.stack(values_list),
-        dones=jnp.stack(dones_list),
+        observations=np.stack(observations_list),
+        actions=np.stack(actions_list),
+        rewards=np.stack(rewards_list),
+        values=np.stack(values_list),
+        dones=np.stack(dones_list),
         states=states_list,
     )
     return (next_observations, dones), experience
