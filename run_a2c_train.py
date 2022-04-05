@@ -20,6 +20,8 @@ from jax_a2c.saving import save_state, load_state
 
 def main(args: dict):
 
+    args['async'] = False
+    
     num_transition_steps = args['num_timesteps']//(args['num_envs'] * args['num_steps'])
     wandb_run_id = None
     start_update = 0
