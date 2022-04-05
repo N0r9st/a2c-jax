@@ -159,3 +159,29 @@ def get_mc_returns(rewards, dones, last_values, gamma):
 @jax.jit
 def concat_trajectories(traj_list):
     return [jnp.concatenate(x, axis=0) for x in zip(*traj_list)]
+
+@functools.partial(jax.jit, static_argnums=(1,))
+def stack_experiences(exp_list):
+    num_steps = exp_list[0].observations.shape[0]
+    last_vals = exp_list[-1][3][-1]
+    last_dones = exp_list[-1][4][-1]
+    last_states = exp_list[-1][5][-1]
+    observations = jnp.concatenate([x.observations for x in exp_list], axis=0)
+    actions = jnp.concatenate([x.actions for x in exp_list], axis=0)
+    rewards = jnp.concatenate([x.rewards for x in exp_list], axis=0)
+    values = jnp.concatenate([x.values[:num_steps] for x in exp_list], axis=0)
+    dones = jnp.concatenate([x.dones[:num_steps] for x in exp_list], axis=0)
+    states = []
+    for st in exp_list:
+        states += st.states[:num_steps]
+    values = jnp.append(values, last_vals[None], axis=0)
+    dones = jnp.append(dones, last_dones[None], axis=0)
+    states.append(last_states)
+    return Experience(
+        observations=observations,
+        actions=actions,
+        rewards=rewards,
+        values=values,
+        dones=dones,
+        states=states
+    )

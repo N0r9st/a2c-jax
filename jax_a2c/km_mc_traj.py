@@ -78,11 +78,11 @@ def km_mc_rollouts_trajectories(prngkey, k_envs, experience, policy_fn, gamma, K
 
     trajectories = (flat_observations, flat_actions, rep_returns, rep_advantages)
 
-    old_trajectories = (observations, actions, orig_mc_returns, orig_mc_returns - values[:-1])
-    old_trajectory_len = observations.shape[0] * observations.shape[1]
-    old_trajectories = tuple(map(
-        lambda x: jnp.reshape(x, (old_trajectory_len,) + x.shape[2:]), old_trajectories))
+    # old_trajectories = (observations, actions, orig_mc_returns, orig_mc_returns - values[:-1])
+    # old_trajectory_len = observations.shape[0] * observations.shape[1]
+    # old_trajectories = tuple(map(
+    #     lambda x: jnp.reshape(x, (old_trajectory_len,) + x.shape[2:]), old_trajectories))
 
-    trajectories = [jnp.concatenate([t1, t2], axis=0) for t1, t2 in zip(trajectories, old_trajectories)]
+    # trajectories = [jnp.concatenate([t1, t2], axis=0) for t1, t2 in zip(trajectories, old_trajectories)]
 
     return trajectories

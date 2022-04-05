@@ -15,7 +15,7 @@ from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
 from jax_a2c.evaluation import eval
 from jax_a2c.policy import DiagGaussianPolicy
 from jax_a2c.utils import (collect_experience, create_train_state,
-                           process_experience, concat_trajectories)
+                           process_experience, concat_trajectories, stack_experiences)
 from jax_a2c.km_mc_traj import km_mc_rollouts_trajectories
 from jax_a2c.saving import save_state, load_state
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
@@ -149,6 +149,7 @@ def main(args: dict):
         #------------------------------------------------
         #              WORKER ROLLOUTS
         #------------------------------------------------
+        exp_list = []
         for remote in remotes:
 
             prngkey, _ = jax.random.split(prngkey)
@@ -158,6 +159,7 @@ def main(args: dict):
                 envs, 
                 num_steps=args['num_steps']//args['num_workers'], 
                 policy_fn=policy_fn,)
+            exp_list.append(experience)
             
             prngkey, _ = jax.random.split(prngkey)
             to_worker = dict(
@@ -171,8 +173,9 @@ def main(args: dict):
                 train_obs_rms=train_obs_rms,
                 train_ret_rms=train_ret_rms,)
             remote.send(to_worker)
-        out = [remote.recv() for remote in remotes]
-        trajectories = concat_trajectories(out)
+        base_traj = process_experience(stack_experiences(exp_list), gamma=args['gamma'], lambda_=args['lambda_'])
+
+        trajectories = concat_trajectories([remote.recv() for remote in remotes] + [base_traj])
 
         #----------------------------------------------------------------
 
