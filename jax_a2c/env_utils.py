@@ -157,9 +157,9 @@ class DummySubprocVecEnv(SubprocVecEnv):
         self.observation_space = None
         self.action_space = None
 
-def run_workers(worker, k_envs_fn, args, spaces, ctx):
+def run_workers(worker, k_envs_fn, num_workers, spaces, ctx):
     import itertools
-    remotes, work_remotes = zip(*[ctx.Pipe() for _ in range(args['num_workers'])])
+    remotes, work_remotes = zip(*[ctx.Pipe() for _ in range(num_workers)])
     processes = []
     for work_remote, remote, env_fn in zip(work_remotes, remotes, itertools.repeat(k_envs_fn)):
         _k_envs = env_fn()

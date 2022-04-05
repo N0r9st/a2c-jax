@@ -84,7 +84,7 @@ def main(args: dict):
     #            STARTING WORKERS
     #-----------------------------------------
     if args['num_workers'] is not None:
-        remotes = run_workers(_worker, k_envs_fn, args, (envs.observation_space, envs.action_space),ctx)
+        remotes = run_workers(_worker, k_envs_fn, args['num_workers'], (envs.observation_space, envs.action_space),ctx)
     # ------------------------------------------
 
     # return
