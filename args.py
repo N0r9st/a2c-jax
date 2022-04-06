@@ -1,5 +1,6 @@
 import argparse
 possible_types = ['standart', 'KM-rollouts']
+possible_q_updates = [None, 'rep', 'log']
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--wandb-project', type=str, default=None)
@@ -20,11 +21,12 @@ def parse_args():
 
 
     parser.add_argument('--layers', type=str, default='64-64')
-    parser.add_argument('--lr', type=float, default=2e-3)
+    parser.add_argument('--lr', type=float, default=3e-4)
     parser.add_argument('--linear-decay', action='store_true', default=False)
     parser.add_argument('--num-steps', type=int, default=32)
     parser.add_argument('--num-envs', type=int, default=4)
     parser.add_argument('--value-loss-coef', type=float, default=0.4)
+    parser.add_argument('--q-loss-coef', type=float, default=0.4)
     parser.add_argument('--gamma', type=float, default=0.99)
 
     parser.add_argument('--log-every', type=int, default=20)
@@ -35,6 +37,9 @@ def parse_args():
 
     parser.add_argument('--num-workers', type=int, default=None)
     parser.add_argument('--split-between-devices', action='store_true', default=False)
+
+
+    parser.add_argument('--q-update', type=str, default=None)
 
     args = parser.parse_args()
     return args
@@ -124,6 +129,11 @@ def update(args, cmd_args):
     args['num_workers'] = cmd_args.num_workers
     args['split_between_devices'] = cmd_args.split_between_devices
 
+    if cmd_args.q_updates in possible_q_updates:
+        args['q_updates'] = cmd_args.q_updates
+    else:
+        raise NotImplementedError
+    args['q_loss_coef'] = cmd_args.q_loss_coef
     return args
 
 args = update(args, cmd_args)

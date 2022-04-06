@@ -13,7 +13,7 @@ from jax_a2c.a2c import step
 from jax_a2c.distributions import sample_action_from_normal as sample_action
 from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
 from jax_a2c.evaluation import eval
-from jax_a2c.policy import DiagGaussianPolicy
+from jax_a2c.policy import DiagGaussianPolicy, QFunction
 from jax_a2c.utils import (collect_experience, create_train_state,
                            process_experience, concat_trajectories, stack_experiences)
 from jax_a2c.km_mc_traj import km_mc_rollouts_trajectories
@@ -102,16 +102,19 @@ def main(args: dict):
 
     # return
 
-    model = DiagGaussianPolicy(
+    policy_model = DiagGaussianPolicy(
         hidden_sizes=args['hidden_sizes'], 
         action_dim=envs.action_space.shape[0],
         init_log_std=args['init_log_std'])
+
+    qf_model = QFunction(hidden_sizes=args['hidden_sizes'], action_dim=envs.action_space.shape[0],)
 
     prngkey = jax.random.PRNGKey(args['seed'])
 
     state = create_train_state(
         prngkey,
-        model,
+        policy_model,
+        qf_model,
         envs,
         learning_rate=args['lr'],
         decaying_lr=args['linear_decay'],
@@ -157,10 +160,10 @@ def main(args: dict):
 
     for current_update in range(start_update, total_updates):
         st = time.time()
-        policy_fn = functools.partial(_jit_policy_fn, params=state.params)
+        policy_fn = functools.partial(_jit_policy_fn, params=state.params['policy_params'])
         if state.step%args['eval_every']==0:
             eval_envs.obs_rms = deepcopy(envs.obs_rms)
-            _, eval_return = eval(state.apply_fn, state.params, eval_envs)
+            _, eval_return = eval(state.apply_fn, state.params['policy_params'], eval_envs)
             print(f'Updates {current_update}/{total_updates}. Eval return: {eval_return}. Epoch_time: {epoch_time}.')
 
         #------------------------------------------------
@@ -183,7 +186,7 @@ def main(args: dict):
                 prngkey=prngkey,
                 experience=experience,
                 gamma=args['gamma'],
-                policy_fn=functools.partial(_apply_policy_fn, params=state.params),
+                policy_fn=functools.partial(_apply_policy_fn, params=state.params['policy_params']),
                 max_steps=args['L'],
                 K=args['K'],
                 M=args['M'],
@@ -198,13 +201,18 @@ def main(args: dict):
 
         timestep += len(trajectories[0])
             
+        prngkey, _ = jax.random.split(prngkey)
+        
         state, (loss, loss_dict) = step(
             state, 
             trajectories, 
+            prngkey,
             value_loss_coef=args['value_loss_coef'], 
             entropy_coef=args['entropy_coef'], 
 
-            normalize_advantages=args['normalize_advantages'])
+            normalize_advantages=args['normalize_advantages'], 
+            q_updates=args['q_updates'],
+            q_loss_coef=args['q_loss_coef'])
 
         if args['save'] and (current_update % args['save_every']):
             additional = {}
