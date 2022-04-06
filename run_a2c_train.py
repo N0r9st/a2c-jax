@@ -147,7 +147,6 @@ def main(args: dict):
                 lambda_=args['lambda_'])
 
         elif args['type'] == 'KM-rollouts':
-            sts = time.time()
             trajectories = km_mc_rollouts_trajectories(
                 prngkey=prngkey,
                 experience=experience,
@@ -157,8 +156,6 @@ def main(args: dict):
                 max_steps=args['L'],
                 K=args['K'],
                 M=args['M'])
-            print(time.time() - sts)
-
         timestep += len(trajectories[0])
             
         state, (loss, loss_dict) = step(
