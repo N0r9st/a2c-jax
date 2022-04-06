@@ -8,6 +8,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
+from flax import struct
 from flax.training.train_state import TrainState
 
 import jax_a2c.env_utils
@@ -48,6 +49,51 @@ def create_train_state(
     state = TrainState.create(
         apply_fn=model.apply,
         params=params,
+        tx=tx)
+
+    return state
+
+class QTrainState(TrainState):
+    q_fn: Callable  = struct.field(pytree_node=False)
+    
+
+def create_train_state(
+    prngkey: PRNGKey, 
+    policy_model: ModelClass,
+    qf_model: ModelClass,
+    envs: jax_a2c.env_utils.SubprocVecEnv,
+    learning_rate: float, 
+    decaying_lr: bool, 
+    max_norm: float,
+    decay: float,
+    eps: float,
+    train_steps: int = 0) -> QTrainState:
+
+    dummy_input = envs.reset()
+    dummy_action = np.stack([envs.action_space.sample() for _ in range(envs.num_envs)])
+
+    policy_variables = policy_model.init(prngkey, dummy_input)
+    policy_params = policy_variables['params']
+
+    prngkey, _ = jax.random.split(prngkey)
+    qf_variables = qf_model.init(prngkey, dummy_input, dummy_action)
+    qf_params = qf_variables['params']
+
+    if decaying_lr:
+        lr = optax.linear_schedule(
+            init_value = learning_rate, end_value=0.,
+            transition_steps=train_steps)
+    else:
+        lr = learning_rate
+
+    tx = optax.chain(
+        optax.clip_by_global_norm(max_norm),
+        optax.rmsprop(learning_rate=lr, decay=decay, eps=eps)
+        )
+    state = QTrainState.create(
+        apply_fn=policy_model.apply,
+        params={'policy_params': policy_params, 'qf_params': qf_params},
+        q_fn=qf_model.apply,
         tx=tx)
 
     return state
@@ -160,7 +206,7 @@ def get_mc_returns(rewards, dones, last_values, gamma):
 def concat_trajectories(traj_list):
     return [jnp.concatenate(x, axis=0) for x in zip(*traj_list)]
 
-@functools.partial(jax.jit, static_argnums=(1,))
+@functools.partial(jax.jit)
 def stack_experiences(exp_list):
     num_steps = exp_list[0].observations.shape[0]
     last_vals = exp_list[-1][3][-1]
