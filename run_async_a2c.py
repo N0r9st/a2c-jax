@@ -137,8 +137,11 @@ def main(args: dict):
 
             timestep = state.step * args['num_envs'] * args['num_steps'] # state.step * args['K'] * args['L'] * args['M'] * args['num_envs'] * args['num_steps'] 
 
-            train_obs_rms = deepcopy(additional['obs_rms'])
-            train_ret_rms = deepcopy(additional['ret_rms'])
+            envs.obs_rms = deepcopy(additional['obs_rms'])
+            envs.ret_rms = deepcopy(additional['ret_rms'])
+
+            train_obs_rms = envs.obs_rms
+            train_ret_rms = envs.ret_rms
         else:
             print(f"Checkpoint {chkpnt} not found!")
 
