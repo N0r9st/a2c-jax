@@ -39,7 +39,7 @@ def parse_args():
     parser.add_argument('--split-between-devices', action='store_true', default=False)
 
 
-    parser.add_argument('--q-update', type=str, default=None)
+    parser.add_argument('--q-updates', type=str, default=None)
 
     args = parser.parse_args()
     return args

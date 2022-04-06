@@ -32,12 +32,21 @@ def loss_fn(
         advantages = (advantages - advantages.mean())/(advantages.std() + 1e-6)
     q_loss = 0
     if q_updates == 'rep':
-        q_loss = ((q_fn(params['qfn_params'], observations, actions) - returns)**2).mean()
-        # policy enchancement 
+        q_loss = ((q_fn({'params': params['qf_params']}, observations, actions) - returns)**2).mean()
         q_loss += - q_loss_coef * q_fn(
-                    jax.lax.stop_gradient(params['qfn_params']), 
+                    jax.lax.stop_gradient({'params': params['qf_params']}), 
+                    observations, 
+                    action_samples).mean()
+    elif q_updates == 'log':
+        q_loss = ((q_fn({'params': params['qf_params']}, observations, actions) - returns)**2).mean()
+        estimations = q_fn(
+                    jax.lax.stop_gradient({'params': params['qf_params']}), 
                     observations, 
                     action_samples)
+        
+        estimated_advantages = estimations - values
+        q_loss += - (jax.lax.stop_gradient(estimated_advantages) * action_logprobs).mean()
+
     policy_loss = - (jax.lax.stop_gradient(advantages) * action_logprobs).mean()
     value_loss = ((returns - values)**2).mean()
     loss = value_loss_coef*value_loss + policy_loss - entropy_coef*dist_entropy + q_loss
@@ -46,7 +55,8 @@ def loss_fn(
         policy_loss=policy_loss, 
         dist_entropy=dist_entropy, 
         advantages_max = jnp.abs(advantages).max(),
-        min_std=jnp.exp(log_stds).min())
+        min_std=jnp.exp(log_stds).min(),
+        q_loss=q_loss)
 
 @functools.partial(jax.jit, static_argnums=(3,4,5,6,7))
 def step(state, trajectories, prngkey,
