@@ -160,7 +160,7 @@ def get_mc_returns(rewards, dones, last_values, gamma):
 def concat_trajectories(traj_list):
     return [jnp.concatenate(x, axis=0) for x in zip(*traj_list)]
 
-@functools.partial(jax.jit, static_argnums=(1,))
+@jax.jit
 def stack_experiences(exp_list):
     num_steps = exp_list[0].observations.shape[0]
     last_vals = exp_list[-1][3][-1]
