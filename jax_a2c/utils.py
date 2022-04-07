@@ -185,3 +185,13 @@ def stack_experiences(exp_list):
         dones=dones,
         states=states
     )
+
+@jax.jit
+def flatten_experience(experience): ...
+
+def select_random_states(n, experience, type, **kwargs):
+    flattened = flatten_experience(experience)
+    if type=='random':
+        return select_experience_random(n, experience)
+
+def select_experience_random(n, experience): ...

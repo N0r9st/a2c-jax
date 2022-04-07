@@ -66,14 +66,15 @@ def main(args: dict):
         norm_r=args['norm_r'], 
         norm_obs=args['norm_obs'],
         ctx=ctx)
-        
-    k_envs_fn = functools.partial(make_vec_env,
-        name=args['env_name'], 
-        num=args['num_k_envs'], 
-        norm_r=args['norm_r'], 
-        norm_obs=args['norm_obs'],
-        ctx=ctx
-        )
+
+    if args['type'] == "KM-rollouts":
+        k_envs_fn = functools.partial(make_vec_env,
+            name=args['env_name'], 
+            num=args['num_k_envs'], 
+            norm_r=args['norm_r'], 
+            norm_obs=args['norm_obs'],
+            ctx=ctx
+            )
 
     eval_envs = make_vec_env(
             name=args['env_name'], 
@@ -90,17 +91,16 @@ def main(args: dict):
     # -----------------------------------------
     #            STARTING WORKERS
     #-----------------------------------------
-    if args['num_workers'] is not None:
-        remotes = run_workers(
-            _worker, 
-            k_envs_fn, 
-            args['num_workers'], 
-            (envs.observation_space, envs.action_space),
-            ctx,
-            split_between_devices=args['split_between_devices'])
+    if args['type'] == "KM-rollouts":
+        if args['num_workers'] is not None:
+            remotes = run_workers(
+                _worker, 
+                k_envs_fn, 
+                args['num_workers'], 
+                (envs.observation_space, envs.action_space),
+                ctx,
+                split_between_devices=args['split_between_devices'])
     # ------------------------------------------
-
-    # return
 
     model = DiagGaussianPolicy(
         hidden_sizes=args['hidden_sizes'], 
@@ -166,34 +166,42 @@ def main(args: dict):
         #------------------------------------------------
         #              WORKER ROLLOUTS
         #------------------------------------------------
-        exp_list = []
-        for remote in remotes:
+        if args['type'] == "KM-rollouts":
+            exp_list = []
+            for remote in remotes:
+                prngkey, _ = jax.random.split(prngkey)
+                next_obs_and_dones, experience = collect_experience(
+                    prngkey, 
+                    next_obs_and_dones, 
+                    envs, 
+                    num_steps=args['num_steps']//args['num_workers'], 
+                    policy_fn=policy_fn,)
+                exp_list.append(experience)
+                
+                prngkey, _ = jax.random.split(prngkey)
+                to_worker = dict(
+                    prngkey=prngkey,
+                    experience=experience,
+                    gamma=args['gamma'],
+                    policy_fn=functools.partial(_apply_policy_fn, params=state.params),
+                    max_steps=args['L'],
+                    K=args['K'],
+                    M=args['M'],
+                    train_obs_rms=train_obs_rms,
+                    train_ret_rms=train_ret_rms,)
+                remote.send(to_worker)
+            base_traj = process_experience(stack_experiences(exp_list), gamma=args['gamma'], lambda_=args['lambda_'])
 
+            trajectories = concat_trajectories([remote.recv() for remote in remotes] + [base_traj])
+        elif args['type'] == 'standart':
             prngkey, _ = jax.random.split(prngkey)
             next_obs_and_dones, experience = collect_experience(
                 prngkey, 
                 next_obs_and_dones, 
                 envs, 
-                num_steps=args['num_steps']//args['num_workers'], 
+                num_steps=args['num_steps'], 
                 policy_fn=policy_fn,)
-            exp_list.append(experience)
-            
-            prngkey, _ = jax.random.split(prngkey)
-            to_worker = dict(
-                prngkey=prngkey,
-                experience=experience,
-                gamma=args['gamma'],
-                policy_fn=functools.partial(_apply_policy_fn, params=state.params),
-                max_steps=args['L'],
-                K=args['K'],
-                M=args['M'],
-                train_obs_rms=train_obs_rms,
-                train_ret_rms=train_ret_rms,)
-            remote.send(to_worker)
-        base_traj = process_experience(stack_experiences(exp_list), gamma=args['gamma'], lambda_=args['lambda_'])
-
-        trajectories = concat_trajectories([remote.recv() for remote in remotes] + [base_traj])
-
+            trajectories = process_experience(experience, gamma=args['gamma'], lambda_=args['lambda_'])
         #----------------------------------------------------------------
 
         timestep += len(trajectories[0])
