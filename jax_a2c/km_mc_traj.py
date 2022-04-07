@@ -65,7 +65,7 @@ def km_mc_rollouts_trajectories(prngkey, k_envs, experience, policy_fn, gamma, K
             if cumdones.all():
                 break
 
-        bootstrapped_values, _ = policy_fn(prngkey, ob) 
+        bootstrapped_values, _ = policy_fn(prngkey, next_ob) 
         ds = jnp.stack(ds)
         rewards_list = jnp.stack(rewards_list)
         kn_returns = process_rewards(ds, rewards_list, bootstrapped_values[..., 0], gamma)
