@@ -14,8 +14,8 @@ from jax_a2c.distributions import sample_action_from_normal as sample_action
 from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
 from jax_a2c.evaluation import eval
 from jax_a2c.policy import DiagGaussianPolicy
-from jax_a2c.utils import (collect_experience, create_train_state,
-                           process_experience, concat_trajectories, stack_experiences)
+from jax_a2c.utils import (Experience, collect_experience, create_train_state,
+                           process_experience, concat_trajectories, stack_experiences, select_random_states)
 from jax_a2c.km_mc_traj import km_mc_rollouts_trajectories
 from jax_a2c.saving import save_state, load_state
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
@@ -67,7 +67,7 @@ def main(args: dict):
         norm_obs=args['norm_obs'],
         ctx=ctx)
 
-    if args['type'] == "KM-rollouts":
+    if args['type'] in ["KM-rollouts", "sample-KM-rollouts"]:
         k_envs_fn = functools.partial(make_vec_env,
             name=args['env_name'], 
             num=args['num_k_envs'], 
@@ -91,7 +91,7 @@ def main(args: dict):
     # -----------------------------------------
     #            STARTING WORKERS
     #-----------------------------------------
-    if args['type'] == "KM-rollouts":
+    if args['type'] in ["KM-rollouts", "sample-KM-rollouts"]:
         if args['num_workers'] is not None:
             remotes = run_workers(
                 _worker, 
@@ -191,7 +191,54 @@ def main(args: dict):
                     train_ret_rms=train_ret_rms,)
                 remote.send(to_worker)
             base_traj = process_experience(stack_experiences(exp_list), gamma=args['gamma'], lambda_=args['lambda_'])
+            trajectories = concat_trajectories([remote.recv() for remote in remotes] + [base_traj])
+        # --------------------------------------------
 
+        if args['type'] == 'sample-KM-rollouts':
+            prngkey, _ = jax.random.split(prngkey)
+            next_obs_and_dones, experience = collect_experience(
+                prngkey, 
+                next_obs_and_dones, 
+                envs, 
+                num_steps=args['num_steps'], 
+                policy_fn=policy_fn,)
+
+            base_traj = process_experience(experience, gamma=args['gamma'], lambda_=args['lambda_'])
+            if args['sampling_type']=='adv':
+                advs = base_traj[3].reshape((args['num_steps'], args['num_envs']))
+            
+            
+            add_args = {}
+            if args['sampling_type']=='adv':
+                add_args['advantages'] = advs
+                add_args['sampling_prob_temp'] = args['sampling_prob_temp']
+
+            sampled_exp = select_random_states(prngkey, args['n_samples'], experience, type=args['sampling_type'], **add_args)
+            send_amount = args['n_samples']//args['num_workers']
+
+            for i_r, remote in enumerate(remotes):
+                
+                exp = Experience(
+                    observations=sampled_exp.observations[i_r*send_amount: (i_r+1)*send_amount][None],
+                    actions=sampled_exp.actions[i_r*send_amount: (i_r+1)*send_amount][None],
+                    rewards=sampled_exp.rewards[i_r*send_amount: (i_r+1)*send_amount][None],
+                    values=sampled_exp.values[i_r*send_amount: (i_r+1)*send_amount][None],
+                    dones=sampled_exp.dones[i_r*send_amount: (i_r+1)*send_amount][None],
+                    states=[sampled_exp.states[i_r*send_amount: (i_r+1)*send_amount]],
+                )
+
+                prngkey, _ = jax.random.split(prngkey)
+                to_worker = dict(
+                    prngkey=prngkey,
+                    experience=exp,
+                    gamma=args['gamma'],
+                    policy_fn=functools.partial(_apply_policy_fn, params=state.params),
+                    max_steps=args['L'],
+                    K=args['K'],
+                    M=args['M'],
+                    train_obs_rms=train_obs_rms,
+                    train_ret_rms=train_ret_rms,)
+                remote.send(to_worker)
             trajectories = concat_trajectories([remote.recv() for remote in remotes] + [base_traj])
         elif args['type'] == 'standart':
             prngkey, _ = jax.random.split(prngkey)

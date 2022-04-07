@@ -1,5 +1,6 @@
 import argparse
-possible_types = ['standart', 'KM-rollouts']
+possible_types = ['standart', 'KM-rollouts', 'sample-KM-rollouts']
+possible_sampling_types = ['uniform', 'adv',]
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--wandb-project', type=str, default=None)
@@ -35,6 +36,10 @@ def parse_args():
 
     parser.add_argument('--num-workers', type=int, default=None)
     parser.add_argument('--split-between-devices', action='store_true', default=False)
+
+    parser.add_argument('--n-samples', type=int, default=0)
+    parser.add_argument('--sampling-type', type=str, default='uniform')
+    parser.add_argument('--sampling-prob-temp', type=float, default=1)
 
     args = parser.parse_args()
     return args
@@ -86,8 +91,11 @@ def update(args, cmd_args):
     args['save'] = cmd_args.save
     args['save_every'] = cmd_args.save_every
 
-    assert cmd_args.type in possible_types
-    args['type'] = cmd_args.type
+    # assert cmd_args.type in possible_types
+    if cmd_args.type in possible_types:
+        args['type'] = cmd_args.type
+    else: 
+        raise NotImplementedError
 
     args['K'] = cmd_args.K
     args['L'] = cmd_args.L
@@ -123,6 +131,9 @@ def update(args, cmd_args):
 
     args['num_workers'] = cmd_args.num_workers
     args['split_between_devices'] = cmd_args.split_between_devices
+    args['n_samples'] = cmd_args.n_samples
+    args['sampling_type'] = cmd_args.sampling_type
+    args['sampling_prob_temp'] = cmd_args.sampling_prob_temp
 
     return args
 
