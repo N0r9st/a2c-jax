@@ -1,5 +1,5 @@
 import functools
-from jax_a2c.utils import get_mc_returns, process_rewards
+from jax_a2c.utils import process_rewards
 import jax
 import jax.numpy as jnp
 
@@ -10,8 +10,6 @@ def flatten_and_repeat(array, K):
 
 def km_mc_rollouts_trajectories(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_steps=1000):
     observations = experience.observations
-    actions = experience.actions
-    rewards = experience.rewards
     values = experience.values
     dones = experience.dones
     states = experience.states
@@ -21,7 +19,6 @@ def km_mc_rollouts_trajectories(prngkey, k_envs, experience, policy_fn, gamma, K
 
     rep_returns = []
 
-    orig_mc_returns = get_mc_returns(rewards, dones, values[-1], gamma)
     iterations = 0
     flat_values = flatten_and_repeat(values[:-1], K)
     flat_observations = flatten_and_repeat(observations, K)
@@ -65,11 +62,10 @@ def km_mc_rollouts_trajectories(prngkey, k_envs, experience, policy_fn, gamma, K
             if cumdones.all():
                 break
 
-        bootstrapped_values, _ = policy_fn(prngkey, ob) 
+        bootstrapped_values, _ = policy_fn(prngkey, next_ob) # ???
         ds = jnp.stack(ds)
         rewards_list = jnp.stack(rewards_list)
         kn_returns = process_rewards(ds, rewards_list, bootstrapped_values[..., 0], gamma)
-        # kn_returns = kn_returns.reshape(M, kn_returns.shape[0]//M).mean(axis=0)
         rep_returns.append(kn_returns)
 
     rep_returns = jnp.concatenate(rep_returns, axis=0)
