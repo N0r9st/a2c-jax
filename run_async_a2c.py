@@ -191,7 +191,8 @@ def main(args: dict):
                     train_ret_rms=train_ret_rms,)
                 remote.send(to_worker)
             base_traj = process_experience(stack_experiences(exp_list), gamma=args['gamma'], lambda_=args['lambda_'])
-            trajectories = concat_trajectories([remote.recv() for remote in remotes] + [base_traj])
+            trajectories = concat_trajectories([remote.recv() for remote in remotes] + \
+                [base_traj]*(1-args['ignore_original_trajectory']))
         # --------------------------------------------
 
         if args['type'] == 'sample-KM-rollouts':
@@ -239,7 +240,8 @@ def main(args: dict):
                     train_obs_rms=train_obs_rms,
                     train_ret_rms=train_ret_rms,)
                 remote.send(to_worker)
-            trajectories = concat_trajectories([remote.recv() for remote in remotes] + [base_traj])
+            trajectories = concat_trajectories([remote.recv() for remote in remotes] \
+                + [base_traj]*(1-args['ignore_original_trajectory']))
         elif args['type'] == 'standart':
             prngkey, _ = jax.random.split(prngkey)
             next_obs_and_dones, experience = collect_experience(
@@ -253,13 +255,14 @@ def main(args: dict):
 
         timestep += len(trajectories[0])
             
-        state, (loss, loss_dict) = step(
-            state, 
-            trajectories, 
-            value_loss_coef=args['value_loss_coef'], 
-            entropy_coef=args['entropy_coef'], 
+        for _ in range(args['updates_per_batch']):
+            state, (loss, loss_dict) = step(
+                state, 
+                trajectories, 
+                value_loss_coef=args['value_loss_coef'], 
+                entropy_coef=args['entropy_coef'], 
 
-            normalize_advantages=args['normalize_advantages'])
+                normalize_advantages=args['normalize_advantages'])
 
         if args['save'] and (current_update % args['save_every']):
             additional = {}

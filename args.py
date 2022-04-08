@@ -41,6 +41,10 @@ def parse_args():
     parser.add_argument('--sampling-type', type=str, default='uniform')
     parser.add_argument('--sampling-prob-temp', type=float, default=1)
 
+    parser.add_argument('--ignore-original-trajectory', action='store_true', default=False)
+
+    parser.add_argument('--updates-per-batch', type=int, default=1)
+
     args = parser.parse_args()
     return args
 
@@ -135,6 +139,9 @@ def update(args, cmd_args):
     args['sampling_type'] = cmd_args.sampling_type
     args['sampling_prob_temp'] = cmd_args.sampling_prob_temp
 
+    args['ignore_original_trajectory'] = cmd_args.ignore_original_trajectory
+
+    args['updates_per_batch'] = cmd_args.updates_per_batch
     return args
 
 args = update(args, cmd_args)
