@@ -4,6 +4,7 @@ os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 from copy import deepcopy
 import time
 import jax
+import jax.numpy as jnp
 import numpy as np
 import wandb
 import itertools
@@ -12,7 +13,7 @@ import multiprocessing as mp
 from jax_a2c.a2c import step
 from jax_a2c.distributions import sample_action_from_normal as sample_action
 from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
-from jax_a2c.evaluation import eval
+from jax_a2c.evaluation import eval, q_eval
 from jax_a2c.policy import DiagGaussianPolicy, QFunction
 from jax_a2c.utils import (collect_experience, create_train_state,
                            process_experience, concat_trajectories, stack_experiences)
@@ -23,6 +24,16 @@ from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
 def _policy_fn(prngkey, observation, params, apply_fn):
     values, (means, log_stds) = apply_fn({'params': params}, observation)
     sampled_actions  = sample_action(prngkey, means, log_stds)
+    return values, sampled_actions
+
+def _q_policy_fn(prngkey, observations, params, apply_fn, q_params, q_fn):
+    observations = jnp.concatenate([observations for _ in range(10)], axis=0)
+    values, (means, log_stds) = apply_fn({'params': params}, observations)
+    sampled_actions  = sample_action(prngkey, means, log_stds)# .reshape(10, observations.shape[0]//10, -1)
+    q_vals = apply_fn({'params': params}, observations).reshape(10, observations.shape[0]//10, -1)
+    to_select = q_vals.argmax(0)
+    sampled_actions = jnp.take_along_axis(sampled_actions, indices=to_select[None, :, None], axis=0)[0]
+    values = jnp.take_along_axis(values, indices=to_select[None, :, None], axis=0)[0]
     return values, sampled_actions
 
 def _worker(remote, k_remotes, parent_remote, spaces, device) -> None:
@@ -49,8 +60,6 @@ def main(args: dict):
     args['async'] = True
     if not args['split_between_devices']:
         os.environ['CUDA_VISIBLE_DEVICES'] = args['device']
-    # os.environ['CUDA_VISIBLE_DEVICES'] = args['device']
-    # os.environ['XLA_PYTHON_CLIENT_MEM_FRACTION'] = args['allocate_memory']
 
     num_transition_steps = args['num_timesteps']//(args['num_envs'] * args['num_steps'])
     wandb_run_id = None
@@ -166,6 +175,12 @@ def main(args: dict):
             _, eval_return = eval(state.apply_fn, state.params['policy_params'], eval_envs)
             print(f'Updates {current_update}/{total_updates}. Eval return: {eval_return}. Epoch_time: {epoch_time}.')
 
+            if args['eval_with_q']:
+                eval_envs.obs_rms = deepcopy(envs.obs_rms)
+                _, q_eval_return = q_eval(state.apply_fn, state.params['policy_params'], 
+                                        state.q_fn, state.params['qf_params'], eval_envs)
+                print(f'Q-eval return: {q_eval_return}')
+
         #------------------------------------------------
         #              WORKER ROLLOUTS
         #------------------------------------------------
@@ -228,7 +243,8 @@ def main(args: dict):
                 'time/timestep': timestep, 
                 'time/updates': current_update, 
                 'time/time': epoch_time,
-                'evaluation/score': eval_return}, 
+                'evaluation/score': eval_return,
+                'evaluation/q-score': q_eval_return}, 
                 commit=False, step=current_update)
             epoch_times = []
 

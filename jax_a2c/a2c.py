@@ -42,6 +42,8 @@ def loss_fn(
         estimations = q_fn({'params': params['qf_params']}, observations, action_samples)
         estimated_advantages = estimations - values
         q_loss += - (jax.lax.stop_gradient(estimated_advantages) * action_logprobs).mean()
+    elif q_updates == 'just_q':
+        q_loss = ((q_fn({'params': params['qf_params']}, observations, actions) - returns)**2).mean()
 
     policy_loss = - (jax.lax.stop_gradient(advantages) * action_logprobs).mean()
     value_loss = ((returns - values)**2).mean()

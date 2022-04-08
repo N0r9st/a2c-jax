@@ -1,6 +1,6 @@
 import argparse
 possible_types = ['standart', 'KM-rollouts']
-possible_q_updates = [None, 'rep', 'log']
+possible_q_updates = [None, 'rep', 'log', 'just_q']
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--wandb-project', type=str, default=None)
@@ -40,6 +40,7 @@ def parse_args():
 
 
     parser.add_argument('--q-updates', type=str, default=None)
+    parser.add_argument('--eval-with-q', action='store_true', default=False)
 
     args = parser.parse_args()
     return args
@@ -134,6 +135,7 @@ def update(args, cmd_args):
     else:
         raise NotImplementedError
     args['q_loss_coef'] = cmd_args.q_loss_coef
+    args['eval_with_q'] = cmd_args.eval_with_q
     return args
 
 args = update(args, cmd_args)
