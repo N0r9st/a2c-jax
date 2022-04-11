@@ -44,8 +44,17 @@ def loss_fn(
         q_loss += - (jax.lax.stop_gradient(estimated_advantages) * action_logprobs).mean()
     elif q_updates == 'just_q':
         q_loss = ((q_fn({'params': params['qf_params']}, observations, actions) - returns)**2).mean()
-
     policy_loss = - (jax.lax.stop_gradient(advantages) * action_logprobs).mean()
+
+    if q_updates == 'rep_only':
+        q_loss = ((q_fn({'params': params['qf_params']}, observations, actions) - returns)**2).mean()
+        q_loss += - q_loss_coef * q_fn(
+                    jax.lax.stop_gradient({'params': params['qf_params']}), 
+                    observations, 
+                    action_samples).mean()
+                    
+        policy_loss=0
+
     value_loss = ((returns - values)**2).mean()
     loss = value_loss_coef*value_loss + policy_loss - entropy_coef*dist_entropy + q_loss
     return loss, dict(

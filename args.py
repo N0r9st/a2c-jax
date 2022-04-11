@@ -1,6 +1,6 @@
 import argparse
 possible_types = ['standart', 'KM-rollouts']
-possible_q_updates = [None, 'rep', 'log', 'just_q']
+possible_q_updates = [None, 'rep', 'log', 'just_q', 'rep_only']
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--wandb-project', type=str, default=None)
