@@ -28,6 +28,7 @@ def loss_fn(
         params['policy_params'], 
         apply_fn, observations, actions, prngkey)
     advantages = returns - values
+    loss_dict = {}
     if normalize_advantages:
         advantages = (advantages - advantages.mean())/(advantages.std() + 1e-6)
     q_loss = 0
@@ -47,8 +48,9 @@ def loss_fn(
         q_loss = ((q_fn({'params': params['qf_params']}, observations, actions) - returns)**2).mean()
 
     elif q_updates == 'add_v_upd':
-        q_loss = ((q_fn({'params': params['qf_params']}, observations, actions) - returns)**2).mean()
-        q_loss += ((q_fn({'params': params['qf_params']}, observations, actions) - values)**2).mean()
+        q_estimations = q_fn({'params': params['qf_params']}, observations, actions)
+        q_loss = ((q_estimations - returns)**2).mean()
+        q_loss += ((q_estimations - values)**2).mean()
 
     policy_loss = - (jax.lax.stop_gradient(advantages) * action_logprobs).mean()
 
@@ -63,19 +65,22 @@ def loss_fn(
 
     value_loss = ((returns - values)**2).mean()
     loss = value_loss_coef*value_loss + policy_loss - entropy_coef*dist_entropy + q_loss
-    return loss, dict(
+    loss_dict.update(
         value_loss=value_loss, 
         policy_loss=policy_loss, 
         dist_entropy=dist_entropy, 
         advantages_max = jnp.abs(advantages).max(),
         min_std=jnp.exp(log_stds).min(),
-        q_loss=q_loss)
+        q_loss=q_loss
+        )
+    return loss, loss_dict
 
 @functools.partial(jax.jit, static_argnums=(3,4,5,6,7))
 def step(state, trajectories, prngkey,
-value_loss_coef=.5, 
-q_loss_coef=.5,
-entropy_coef=.01, normalize_advantages=True, q_updates: str = None):
+    value_loss_coef=.5, 
+    q_loss_coef=.5,
+    entropy_coef=.01, normalize_advantages=True, q_updates: str = None):
+    
     observations, actions, returns, advantages = trajectories
     (loss, loss_dict), grads = jax.value_and_grad(loss_fn, has_aux=True)(
         state.params, 
