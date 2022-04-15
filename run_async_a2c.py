@@ -14,13 +14,18 @@ from jax_a2c.a2c import step
 from jax_a2c.distributions import sample_action_from_normal as sample_action
 from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
 from jax_a2c.evaluation import eval, q_eval
-from jax_a2c.policy import DiagGaussianPolicy, QFunction
+from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy
 from jax_a2c.utils import (collect_experience, create_train_state,
                            process_experience, concat_trajectories, stack_experiences)
 from jax_a2c.km_mc_traj import km_mc_rollouts_trajectories
 from jax_a2c.saving import save_state, load_state
+from flax.core import freeze
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
 
+POLICY_CLASSES = {
+    'DiagGaussianPolicy': DiagGaussianPolicy, 
+    'DiagGaussianStateDependentPolicy': DiagGaussianStateDependentPolicy,
+}
 def _policy_fn(prngkey, observation, params, apply_fn):
     values, (means, log_stds) = apply_fn({'params': params}, observation)
     sampled_actions  = sample_action(prngkey, means, log_stds)
@@ -111,7 +116,7 @@ def main(args: dict):
 
     # return
 
-    policy_model = DiagGaussianPolicy(
+    policy_model = POLICY_CLASSES[args['policy_type']](
         hidden_sizes=args['hidden_sizes'], 
         action_dim=envs.action_space.shape[0],
         init_log_std=args['init_log_std'])
@@ -206,7 +211,8 @@ def main(args: dict):
                 K=args['K'],
                 M=args['M'],
                 train_obs_rms=train_obs_rms,
-                train_ret_rms=train_ret_rms,)
+                train_ret_rms=train_ret_rms,
+                )
             remote.send(to_worker)
         base_traj = process_experience(stack_experiences(exp_list), gamma=args['gamma'], lambda_=args['lambda_'])
 
@@ -222,12 +228,13 @@ def main(args: dict):
             state, 
             trajectories, 
             prngkey,
-            value_loss_coef=args['value_loss_coef'], 
-            entropy_coef=args['entropy_coef'], 
-
-            normalize_advantages=args['normalize_advantages'], 
-            q_updates=args['q_updates'],
-            q_loss_coef=args['q_loss_coef'])
+            # value_loss_coef=args['value_loss_coef'], 
+            # entropy_coef=args['entropy_coef'], 
+            # normalize_advantages=args['normalize_advantages'], 
+            # q_updates=args['q_updates'],
+            # q_loss_coef=args['q_loss_coef'],
+            constant_params=freeze(args['train_constants']),
+            )
 
         if args['save'] and (current_update % args['save_every']):
             additional = {}

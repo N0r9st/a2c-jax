@@ -1,6 +1,7 @@
 import argparse
 possible_types = ['standart', 'KM-rollouts']
 possible_q_updates = [None, 'rep', 'log', 'just_q', 'rep_only', 'add_v_upd']
+possible_policy_types = ['DiagGaussianPolicy', 'DiagGaussianStateDependentPolicy']
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--wandb-project', type=str, default=None)
@@ -41,6 +42,10 @@ def parse_args():
 
     parser.add_argument('--q-updates', type=str, default=None)
     parser.add_argument('--eval-with-q', action='store_true', default=False)
+
+    parser.add_argument('--init-log-std', type=float, default=0.)
+    parser.add_argument('--alpha', type=float, default=0.)
+    parser.add_argument('--policy-type', type=str, default='DiagGaussianPolicy')
 
     args = parser.parse_args()
     return args
@@ -134,8 +139,25 @@ def update(args, cmd_args):
         args['q_updates'] = cmd_args.q_updates
     else:
         raise NotImplementedError
-    args['q_loss_coef'] = cmd_args.q_loss_coef
+
+    if cmd_args.policy_type in possible_policy_types:
+        args['policy_type'] = cmd_args.policy_type
+    else:
+        raise NotImplementedError
+
+    # args['q_loss_coef'] = cmd_args.q_loss_coef
     args['eval_with_q'] = cmd_args.eval_with_q
+    args['init_log_std'] = cmd_args.init_log_std
+
+    args['train_constants'] = dict(
+        value_loss_coef=args['value_loss_coef'], 
+        entropy_coef=args['entropy_coef'], 
+        normalize_advantages=args['normalize_advantages'], 
+        q_updates=args['q_updates'],
+        q_loss_coef=cmd_args.q_loss_coef,
+        alpha=cmd_args.alpha,
+    )
+    
     return args
 
 args = update(args, cmd_args)
