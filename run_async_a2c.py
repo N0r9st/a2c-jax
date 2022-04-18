@@ -20,9 +20,9 @@ from jax_a2c.km_mc_traj import km_mc_rollouts_trajectories
 from jax_a2c.saving import save_state, load_state
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
 
-def _policy_fn(prngkey, observation, params, apply_fn):
+def _policy_fn(prngkey, observation, params, apply_fn, det=False):
     values, (means, log_stds) = apply_fn({'params': params}, observation)
-    sampled_actions  = sample_action(prngkey, means, log_stds)
+    sampled_actions  = means if det else sample_action(prngkey, means, log_stds)
     return values, sampled_actions
 
 def _worker(remote, k_remotes, parent_remote, spaces, device) -> None:
@@ -122,7 +122,9 @@ def main(args: dict):
     )
 
     _apply_policy_fn = functools.partial(_policy_fn, apply_fn=state.apply_fn)
-    _jit_policy_fn = jax.jit(_apply_policy_fn)
+    _jit_policy_fn = jax.jit(
+        functools.partial(_apply_policy_fn, det=False),
+        )
 
     next_obs = envs.reset()
     next_obs_and_dones = (next_obs, np.array(next_obs.shape[0]*[False]))
@@ -183,7 +185,7 @@ def main(args: dict):
                     prngkey=prngkey,
                     experience=experience,
                     gamma=args['gamma'],
-                    policy_fn=functools.partial(_apply_policy_fn, params=state.params),
+                    policy_fn=functools.partial(_apply_policy_fn, params=state.params, det=args['det_km']),
                     max_steps=args['L'],
                     K=args['K'],
                     M=args['M'],
@@ -233,7 +235,7 @@ def main(args: dict):
                     prngkey=prngkey,
                     experience=exp,
                     gamma=args['gamma'],
-                    policy_fn=functools.partial(_apply_policy_fn, params=state.params),
+                    policy_fn=functools.partial(_apply_policy_fn, params=state.params, det=args['det_km']),
                     max_steps=args['L'],
                     K=args['K'],
                     M=args['M'],
@@ -279,7 +281,7 @@ def main(args: dict):
                     prngkey=prngkey,
                     experience=sampled_exp,
                     gamma=args['gamma'],
-                    policy_fn=functools.partial(_apply_policy_fn, params=state.params),
+                    policy_fn=functools.partial(_apply_policy_fn, params=state.params, det=args['det_km']),
                     max_steps=args['L'],
                     K=args['K'],
                     M=args['M'],

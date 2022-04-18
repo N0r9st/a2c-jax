@@ -45,6 +45,8 @@ def parse_args():
 
     parser.add_argument('--updates-per-batch', type=int, default=1)
 
+    parser.add_argument('--det-km', action='store_true', default=False)
+
     args = parser.parse_args()
     return args
 
@@ -142,6 +144,8 @@ def update(args, cmd_args):
     args['ignore_original_trajectory'] = cmd_args.ignore_original_trajectory
 
     args['updates_per_batch'] = cmd_args.updates_per_batch
+
+    args['det_km'] = cmd_args.det_km
     return args
 
 args = update(args, cmd_args)
