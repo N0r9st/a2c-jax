@@ -198,3 +198,50 @@ def stack_experiences(exp_list):
         dones=dones,
         states=states
     )
+
+
+@jax.jit
+def flatten_experience(experience: Experience): 
+    num_steps, num_envs = experience.observations.shape[:2]
+    # experience = tuple(x[:num_steps].reshape((num_envs*num_steps,) + x.shape[2:]) for x in experience)
+    return Experience(
+        observations = experience.observations[:num_steps].reshape((num_envs*num_steps,) + experience.observations.shape[2:]),
+        actions = experience.actions[:num_steps].reshape((num_envs*num_steps,) + experience.actions.shape[2:]),
+        rewards = experience.rewards[:num_steps].reshape((num_envs*num_steps,) + experience.rewards.shape[2:]),
+        values = experience.values[:num_steps].reshape((num_envs*num_steps,) + experience.values.shape[2:]),
+        dones = experience.dones[:num_steps].reshape((num_envs*num_steps,) + experience.dones.shape[2:]),
+        states = flatten_list(experience.states[:num_steps]
+            )
+    )
+
+def select_random_states(prngkey, n, experience, type, **kwargs):
+    flattened = flatten_experience(experience)
+    if type=='uniform':
+        p = None
+    if type=='adv':
+        advs = kwargs['advantages'].reshape(-1)
+        p = jax.nn.softmax((advs**2)/kwargs['sampling_prob_temp'], axis=0)
+    return select_experience_random(prngkey, n, flattened, p=p)
+
+# @functools.partial(jax.jit, static_argnames=('replace', 'n'))
+def select_experience_random(prngkey, n, experience, replace=False, p=None): 
+    num_states = len(experience[0])
+    choices = jnp.array(jax.random.choice(prngkey, num_states, shape=(n,), replace=replace, p=p))
+    return Experience(observations=experience.observations[choices],
+                    actions=experience.actions[choices],
+                    rewards=experience.rewards[choices],
+                    values=experience.values[choices],
+                    dones=experience.dones[choices],
+                    states=substract_from_list(experience.states, choices),
+                        )
+    
+def flatten_list(lst):
+    out = []
+    for l in lst:
+        out += l
+    return out
+def substract_from_list(lst, ind):
+    out = []
+    for i in ind:
+        out.append(lst[i])
+    return out

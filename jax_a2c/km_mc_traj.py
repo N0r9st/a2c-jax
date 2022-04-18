@@ -20,7 +20,7 @@ def km_mc_rollouts_trajectories(prngkey, k_envs, experience, policy_fn, gamma, K
     rep_returns = []
 
     iterations = 0
-    flat_values = flatten_and_repeat(values[:-1], K)
+    flat_values = flatten_and_repeat(values[:len(observations)], K)
     flat_observations = flatten_and_repeat(observations, K)
     flat_dones = flatten_and_repeat(dones, K)
 

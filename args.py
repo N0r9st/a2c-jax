@@ -1,7 +1,8 @@
 import argparse
-possible_types = ['standart', 'KM-rollouts']
+possible_types = ['standart', 'sample-KM-rollouts-fast']
 possible_q_updates = [None, 'rep', 'log', 'just_q', 'rep_only', 'add_v_upd']
 possible_policy_types = ['DiagGaussianPolicy', 'DiagGaussianStateDependentPolicy']
+possible_sampling_types = ['uniform', 'adv',]
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--wandb-project', type=str, default=None)
@@ -14,7 +15,7 @@ def parse_args():
 
     parser.add_argument('--num-timesteps', type=int, default=2_000_000)
 
-    parser.add_argument('--type', type=str, default='standart',)
+    parser.add_argument('--type', type=str, default='sample-KM-rollouts-fast',)
 
     parser.add_argument('--K', type=int, default=0)
     parser.add_argument('--L', type=int, default=0)
@@ -46,6 +47,11 @@ def parse_args():
     parser.add_argument('--init-log-std', type=float, default=0.)
     parser.add_argument('--alpha', type=float, default=0.)
     parser.add_argument('--policy-type', type=str, default='DiagGaussianPolicy')
+
+    parser.add_argument('--sampling-type', type=str, default='uniform')
+    parser.add_argument('--sampling-prob-temp', type=float, default=1)
+    parser.add_argument('--n-samples', type=int, default=0)
+    parser.add_argument('--ignore-original-trajectory', action='store_true', default=False)
 
     args = parser.parse_args()
     return args
@@ -157,6 +163,11 @@ def update(args, cmd_args):
         q_loss_coef=cmd_args.q_loss_coef,
         alpha=cmd_args.alpha,
     )
+
+    args['sampling_type'] = cmd_args.sampling_type
+    args['sampling_prob_temp'] = cmd_args.sampling_prob_temp
+    args['n_samples'] = cmd_args.n_samples
+    args['ignore_original_trajectory'] = cmd_args.ignore_original_trajectory
     
     return args
 

@@ -15,7 +15,7 @@ from jax_a2c.distributions import sample_action_from_normal as sample_action
 from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
 from jax_a2c.evaluation import eval, q_eval
 from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy
-from jax_a2c.utils import (collect_experience, create_train_state,
+from jax_a2c.utils import (Experience, collect_experience, create_train_state, select_random_states,
                            process_experience, concat_trajectories, stack_experiences)
 from jax_a2c.km_mc_traj import km_mc_rollouts_trajectories
 from jax_a2c.saving import save_state, load_state
@@ -29,16 +29,6 @@ POLICY_CLASSES = {
 def _policy_fn(prngkey, observation, params, apply_fn):
     values, (means, log_stds) = apply_fn({'params': params}, observation)
     sampled_actions  = sample_action(prngkey, means, log_stds)
-    return values, sampled_actions
-
-def _q_policy_fn(prngkey, observations, params, apply_fn, q_params, q_fn):
-    observations = jnp.concatenate([observations for _ in range(10)], axis=0)
-    values, (means, log_stds) = apply_fn({'params': params}, observations)
-    sampled_actions  = sample_action(prngkey, means, log_stds)# .reshape(10, observations.shape[0]//10, -1)
-    q_vals = apply_fn({'params': params}, observations).reshape(10, observations.shape[0]//10, -1)
-    to_select = q_vals.argmax(0)
-    sampled_actions = jnp.take_along_axis(sampled_actions, indices=to_select[None, :, None], axis=0)[0]
-    values = jnp.take_along_axis(values, indices=to_select[None, :, None], axis=0)[0]
     return values, sampled_actions
 
 def _worker(remote, k_remotes, parent_remote, spaces, device) -> None:
@@ -72,7 +62,8 @@ def main(args: dict):
     timestep = 0
     epoch_times = []
     epoch_time = 0
-    eval_return = None
+    eval_return = 0
+    q_eval_return = 0
 
     envs = make_vec_env(
         name=args['env_name'], 
@@ -114,8 +105,6 @@ def main(args: dict):
             split_between_devices=args['split_between_devices'])
     # ------------------------------------------
 
-    # return
-
     policy_model = POLICY_CLASSES[args['policy_type']](
         hidden_sizes=args['hidden_sizes'], 
         action_dim=envs.action_space.shape[0],
@@ -152,8 +141,7 @@ def main(args: dict):
             wandb_run_id = additional['wandb_run_id']
             start_update = state.step
 
-            timestep = state.step * args['num_envs'] * args['num_steps'] # state.step * args['K'] * args['L'] * args['M'] * args['num_envs'] * args['num_steps'] 
-
+            timestep = state.step * args['num_envs'] * args['num_steps'] 
             envs.obs_rms = deepcopy(additional['obs_rms'])
             envs.ret_rms = deepcopy(additional['ret_rms'])
 
@@ -172,6 +160,7 @@ def main(args: dict):
     total_updates = args['num_timesteps'] // ( args['num_envs'] * args['num_steps'])
 
 
+    args['train_constants'] = freeze(args['train_constants'])
     for current_update in range(start_update, total_updates):
         st = time.time()
         policy_fn = functools.partial(_jit_policy_fn, params=state.params['policy_params'])
@@ -200,11 +189,29 @@ def main(args: dict):
                 num_steps=args['num_steps']//args['num_workers'], 
                 policy_fn=policy_fn,)
             exp_list.append(experience)
-            
+
+
+            base_traj_part = process_experience(experience, gamma=args['gamma'], lambda_=args['lambda_'])
+            if args['sampling_type']=='adv':
+                advs = base_traj_part[3].reshape((args['num_steps']//args['num_workers'], args['num_envs']))
+            add_args = {}
+            if args['sampling_type']=='adv':
+                add_args['advantages'] = advs
+                add_args['sampling_prob_temp'] = args['sampling_prob_temp']
+            sampled_exp = select_random_states(prngkey, args['n_samples']//args['num_workers'], experience, type=args['sampling_type'], **add_args)
+            sampled_exp = Experience(
+                observations=sampled_exp.observations[None],
+                actions=sampled_exp.actions[None],
+                rewards=sampled_exp.rewards[None],
+                values=sampled_exp.values[None],
+                dones=sampled_exp.dones[None],
+                states=[sampled_exp.states],
+            )
+
             prngkey, _ = jax.random.split(prngkey)
             to_worker = dict(
                 prngkey=prngkey,
-                experience=experience,
+                experience=sampled_exp,
                 gamma=args['gamma'],
                 policy_fn=functools.partial(_apply_policy_fn, params=state.params['policy_params']),
                 max_steps=args['L'],
@@ -215,8 +222,8 @@ def main(args: dict):
                 )
             remote.send(to_worker)
         base_traj = process_experience(stack_experiences(exp_list), gamma=args['gamma'], lambda_=args['lambda_'])
-
-        trajectories = concat_trajectories([remote.recv() for remote in remotes] + [base_traj])
+        trajectories = concat_trajectories([remote.recv() for remote in remotes] \
+            + [base_traj]*(1-args['ignore_original_trajectory']))
 
         #----------------------------------------------------------------
 
@@ -228,12 +235,7 @@ def main(args: dict):
             state, 
             trajectories, 
             prngkey,
-            # value_loss_coef=args['value_loss_coef'], 
-            # entropy_coef=args['entropy_coef'], 
-            # normalize_advantages=args['normalize_advantages'], 
-            # q_updates=args['q_updates'],
-            # q_loss_coef=args['q_loss_coef'],
-            constant_params=freeze(args['train_constants']),
+            constant_params=args['train_constants'],
             )
 
         if args['save'] and (current_update % args['save_every']):
