@@ -1,5 +1,5 @@
 import argparse
-possible_types = ['standart', 'KM-rollouts', 'sample-KM-rollouts']
+possible_types = ['standart', 'KM-rollouts', 'sample-KM-rollouts', 'sample-KM-rollouts-fast']
 possible_sampling_types = ['uniform', 'adv',]
 def parse_args():
     parser = argparse.ArgumentParser()

@@ -67,7 +67,7 @@ def main(args: dict):
         norm_obs=args['norm_obs'],
         ctx=ctx)
 
-    if args['type'] in ["KM-rollouts", "sample-KM-rollouts"]:
+    if args['type'] in ["KM-rollouts", "sample-KM-rollouts", 'sample-KM-rollouts-fast']:
         k_envs_fn = functools.partial(make_vec_env,
             name=args['env_name'], 
             num=args['num_k_envs'], 
@@ -91,7 +91,7 @@ def main(args: dict):
     # -----------------------------------------
     #            STARTING WORKERS
     #-----------------------------------------
-    if args['type'] in ["KM-rollouts", "sample-KM-rollouts"]:
+    if args['type'] in ["KM-rollouts", "sample-KM-rollouts", 'sample-KM-rollouts-fast']:
         if args['num_workers'] is not None:
             remotes = run_workers(
                 _worker, 
@@ -242,6 +242,55 @@ def main(args: dict):
                 remote.send(to_worker)
             trajectories = concat_trajectories([remote.recv() for remote in remotes] \
                 + [base_traj]*(1-args['ignore_original_trajectory']))
+
+        if args['type'] == 'sample-KM-rollouts-fast':
+            exp_list = []
+            for remote in remotes:
+
+                prngkey, _ = jax.random.split(prngkey)
+                next_obs_and_dones, experience = collect_experience(
+                    prngkey, 
+                    next_obs_and_dones, 
+                    envs, 
+                    num_steps=args['num_steps']//args['num_workers'], 
+                    policy_fn=policy_fn,)
+                exp_list.append(experience)
+
+
+                base_traj_part = process_experience(experience, gamma=args['gamma'], lambda_=args['lambda_'])
+                if args['sampling_type']=='adv':
+                    advs = base_traj_part[3].reshape((args['num_steps']//args['num_workers'], args['num_envs']))
+                add_args = {}
+                if args['sampling_type']=='adv':
+                    add_args['advantages'] = advs
+                    add_args['sampling_prob_temp'] = args['sampling_prob_temp']
+                sampled_exp = select_random_states(prngkey, args['n_samples']//args['num_workers'], experience, type=args['sampling_type'], **add_args)
+                sampled_exp = Experience(
+                    observations=sampled_exp.observations[None],
+                    actions=sampled_exp.actions[None],
+                    rewards=sampled_exp.rewards[None],
+                    values=sampled_exp.values[None],
+                    dones=sampled_exp.dones[None],
+                    states=[sampled_exp.states],
+                )
+
+                prngkey, _ = jax.random.split(prngkey)
+                to_worker = dict(
+                    prngkey=prngkey,
+                    experience=sampled_exp,
+                    gamma=args['gamma'],
+                    policy_fn=functools.partial(_apply_policy_fn, params=state.params),
+                    max_steps=args['L'],
+                    K=args['K'],
+                    M=args['M'],
+                    train_obs_rms=train_obs_rms,
+                    train_ret_rms=train_ret_rms,
+                    )
+                remote.send(to_worker)
+            base_traj = process_experience(stack_experiences(exp_list), gamma=args['gamma'], lambda_=args['lambda_'])
+            trajectories = concat_trajectories([remote.recv() for remote in remotes] \
+                + [base_traj]*(1-args['ignore_original_trajectory']))
+
         elif args['type'] == 'standart':
             prngkey, _ = jax.random.split(prngkey)
             next_obs_and_dones, experience = collect_experience(
