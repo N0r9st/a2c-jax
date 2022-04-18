@@ -26,9 +26,9 @@ POLICY_CLASSES = {
     'DiagGaussianPolicy': DiagGaussianPolicy, 
     'DiagGaussianStateDependentPolicy': DiagGaussianStateDependentPolicy,
 }
-def _policy_fn(prngkey, observation, params, apply_fn):
+def _policy_fn(prngkey, observation, params, apply_fn, determenistic=False):
     values, (means, log_stds) = apply_fn({'params': params}, observation)
-    sampled_actions  = sample_action(prngkey, means, log_stds)
+    sampled_actions  = means if determenistic else sample_action(prngkey, means, log_stds)
     return values, sampled_actions
 
 def _worker(remote, k_remotes, parent_remote, spaces, device) -> None:
@@ -127,7 +127,7 @@ def main(args: dict):
         train_steps=num_transition_steps
     )
 
-    _apply_policy_fn = functools.partial(_policy_fn, apply_fn=state.apply_fn)
+    _apply_policy_fn = functools.partial(_policy_fn, apply_fn=state.apply_fn, determenistic=False)
     _jit_policy_fn = jax.jit(_apply_policy_fn)
 
     next_obs = envs.reset()
@@ -213,7 +213,10 @@ def main(args: dict):
                 prngkey=prngkey,
                 experience=sampled_exp,
                 gamma=args['gamma'],
-                policy_fn=functools.partial(_apply_policy_fn, params=state.params['policy_params']),
+                policy_fn=functools.partial(
+                    _apply_policy_fn, 
+                    params=state.params['policy_params'], 
+                    determenistic=args['km_determenistic']),
                 max_steps=args['L'],
                 K=args['K'],
                 M=args['M'],

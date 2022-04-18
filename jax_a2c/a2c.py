@@ -11,7 +11,7 @@ from jax_a2c.utils import PRNGKey
 Array = Any
 
 # @functools.partial(jax.jit, static_argnums=(1,6,7,8,9,10,11))
-@functools.partial(jax.jit, static_argnums=(1,6,7))
+# @functools.partial(jax.jit, static_argnums=(1,6,7))
 def loss_fn(
     params: flax.core.frozen_dict, 
     apply_fn: Callable, 
@@ -20,16 +20,12 @@ def loss_fn(
     returns: Array, 
     prngkey: PRNGKey,
     q_fn: Callable,
-    # value_loss_coef: float = .5, 
-    # q_loss_coef: float = .5,
-    # entropy_coef: float = .01,
-    # normalize_advantages: bool = True, 
-    # q_updates: Optional[str] = None
     constant_params,
     ):
     action_logprobs, values, dist_entropy, log_stds, action_samples = evaluate_actions(
         params['policy_params'], 
         apply_fn, observations, actions, prngkey)
+    print(log_stds.shape)
     advantages = returns - values
     loss_dict = {}
     if constant_params['normalize_advantages']:
@@ -40,11 +36,10 @@ def loss_fn(
         q_loss = ((q_estimations - returns)**2).mean()
         
     if constant_params['q_updates'] == 'rep':
-        # q_loss = ((q_fn({'params': params['qf_params']}, observations, actions) - returns)**2).mean()
-        q_loss += - constant_params['q_loss_coef'] * (q_fn(
-                    jax.lax.stop_gradient({'params': params['qf_params']}), 
-                    observations, 
-                    action_samples).mean() - constant_params['alpha']*log_stds.mean())
+        q_loss += - constant_params['q_loss_coef'] * (
+            q_fn(jax.lax.stop_gradient({'params': params['qf_params']}), observations, action_samples).mean() - \
+            constant_params['alpha']*log_stds.mean()
+            )
     elif constant_params['q_updates'] == 'log':
         estimations = q_fn({'params': params['qf_params']}, observations, action_samples)
         estimated_advantages = estimations - values
@@ -80,11 +75,8 @@ def loss_fn(
     return loss, loss_dict
 
 # @functools.partial(jax.jit, static_argnums=(3,4,5,6,7))
-@functools.partial(jax.jit, static_argnums=(3,))
+# @functools.partial(jax.jit, static_argnums=(3,))
 def step(state, trajectories, prngkey,
-    # value_loss_coef=.5, 
-    # q_loss_coef=.5,
-    # entropy_coef=.01, normalize_advantages=True, q_updates: str = None
     constant_params,
     ):
     
@@ -97,11 +89,6 @@ def step(state, trajectories, prngkey,
         returns,
         prngkey,
         state.q_fn,
-        # value_loss_coef=value_loss_coef,
-        # entropy_coef=entropy_coef,
-        # normalize_advantages=normalize_advantages, 
-        # q_updates=q_updates,
-        # q_loss_coef=q_loss_coef
         constant_params,)
     new_state = state.apply_gradients(grads=grads)
     return new_state, (loss, loss_dict)

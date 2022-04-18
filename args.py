@@ -52,6 +52,7 @@ def parse_args():
     parser.add_argument('--sampling-prob-temp', type=float, default=1)
     parser.add_argument('--n-samples', type=int, default=0)
     parser.add_argument('--ignore-original-trajectory', action='store_true', default=False)
+    parser.add_argument('--km-determenistic', action='store_true', default=True)
 
     args = parser.parse_args()
     return args
@@ -162,12 +163,14 @@ def update(args, cmd_args):
         q_updates=args['q_updates'],
         q_loss_coef=cmd_args.q_loss_coef,
         alpha=cmd_args.alpha,
+        gamma=cmd_args.gamma,
     )
 
     args['sampling_type'] = cmd_args.sampling_type
     args['sampling_prob_temp'] = cmd_args.sampling_prob_temp
     args['n_samples'] = cmd_args.n_samples
     args['ignore_original_trajectory'] = cmd_args.ignore_original_trajectory
+    args['km_determenistic'] = cmd_args.km_determenistic
     
     return args
 
