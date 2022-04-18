@@ -258,12 +258,10 @@ def main(args: dict):
                     policy_fn=policy_fn,)
                 exp_list.append(experience)
 
-
                 base_traj_part = process_experience(experience, gamma=args['gamma'], lambda_=args['lambda_'])
-                if args['sampling_type']=='adv':
-                    advs = base_traj_part[3].reshape((args['num_steps']//args['num_workers'], args['num_envs']))
                 add_args = {}
                 if args['sampling_type']=='adv':
+                    advs = base_traj_part[3].reshape((args['num_steps']//args['num_workers'], args['num_envs']))
                     add_args['advantages'] = advs
                     add_args['sampling_prob_temp'] = args['sampling_prob_temp']
                 sampled_exp = select_random_states(prngkey, args['n_samples']//args['num_workers'], experience, type=args['sampling_type'], **add_args)
