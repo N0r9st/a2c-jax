@@ -15,13 +15,15 @@ Array = Any
 def loss_fn(
     params: flax.core.frozen_dict, 
     apply_fn: Callable, 
-    observations: Array, 
-    actions: Array, 
-    returns: Array, 
+    # observations: Array, 
+    # actions: Array, 
+    # returns: Array, 
+    data_tuple,
     prngkey: PRNGKey,
     q_fn: Callable,
     constant_params,
     ):
+    orig_exp, mc_rollouts_exp = data_tuple
     action_logprobs, values, dist_entropy, log_stds, action_samples = evaluate_actions(
         params['policy_params'], 
         apply_fn, observations, actions, prngkey)
@@ -76,17 +78,14 @@ def loss_fn(
 
 # @functools.partial(jax.jit, static_argnums=(3,4,5,6,7))
 # @functools.partial(jax.jit, static_argnums=(3,))
-def step(state, trajectories, prngkey,
-    constant_params,
-    ):
+def step(state, data_tuple, prngkey,
+    constant_params):
     
-    observations, actions, returns, advantages = trajectories
+    # observations, actions, returns, advantages = trajectories
     (loss, loss_dict), grads = jax.value_and_grad(loss_fn, has_aux=True)(
         state.params, 
         state.apply_fn, 
-        observations, 
-        actions, 
-        returns,
+        data_tuple,
         prngkey,
         state.q_fn,
         constant_params,)

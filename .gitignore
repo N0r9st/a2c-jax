@@ -8,3 +8,4 @@ dummy_args.py
 trash.txt
 trained_models/
 test.py
+tests/*

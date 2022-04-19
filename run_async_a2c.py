@@ -12,12 +12,13 @@ import multiprocessing as mp
 
 from jax_a2c.a2c import step
 from jax_a2c.distributions import sample_action_from_normal as sample_action
+from jax_a2c.distributions import calculate_action_logprobs
 from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
 from jax_a2c.evaluation import eval, q_eval
 from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy
 from jax_a2c.utils import (Experience, collect_experience, create_train_state, select_random_states,
                            process_experience, concat_trajectories, stack_experiences)
-from jax_a2c.km_mc_traj import km_mc_rollouts_trajectories
+from jax_a2c.km_mc_traj import km_mc_rollouts_trajectories, km_mc_rollouts
 from jax_a2c.saving import save_state, load_state
 from flax.core import freeze
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
@@ -39,7 +40,8 @@ def _worker(remote, k_remotes, parent_remote, spaces, device) -> None:
     
     k_envs.observation_space, k_envs.action_space = spaces
     k_envs = VecNormalize(k_envs, training=False)
-    km_mc_rollouts_trajectories_ = functools.partial(km_mc_rollouts_trajectories, k_envs=k_envs)
+    # km_mc_rollouts_trajectories_ = functools.partial(km_mc_rollouts_trajectories, k_envs=k_envs)
+    km_mc_rollouts_trajectories_ = functools.partial(km_mc_rollouts, k_envs=k_envs)
     while True:
         try:
             args = remote.recv()
@@ -193,11 +195,11 @@ def main(args: dict):
 
             base_traj_part = process_experience(experience, gamma=args['gamma'], lambda_=args['lambda_'])
             if args['sampling_type']=='adv':
+                add_args = {}
                 advs = base_traj_part[3].reshape((args['num_steps']//args['num_workers'], args['num_envs']))
-            add_args = {}
-            if args['sampling_type']=='adv':
                 add_args['advantages'] = advs
                 add_args['sampling_prob_temp'] = args['sampling_prob_temp']
+                
             sampled_exp = select_random_states(prngkey, args['n_samples']//args['num_workers'], experience, type=args['sampling_type'], **add_args)
             sampled_exp = Experience(
                 observations=sampled_exp.observations[None],
@@ -213,6 +215,7 @@ def main(args: dict):
                 prngkey=prngkey,
                 experience=sampled_exp,
                 gamma=args['gamma'],
+                alpha=args['alpha'],
                 policy_fn=functools.partial(
                     _apply_policy_fn, 
                     params=state.params['policy_params'], 
@@ -224,19 +227,25 @@ def main(args: dict):
                 train_ret_rms=train_ret_rms,
                 )
             remote.send(to_worker)
-        base_traj = process_experience(stack_experiences(exp_list), gamma=args['gamma'], lambda_=args['lambda_'])
-        trajectories = concat_trajectories([remote.recv() for remote in remotes] \
-            + [base_traj]*(1-args['ignore_original_trajectory']))
+        # base_traj = process_experience(stack_experiences(exp_list), gamma=args['gamma'], lambda_=args['lambda_'])
+        # worker_trajectories, w_observations_actions = tuple(zip(*[remote.recv() for remote in remotes]))
+        # trajectories = concat_trajectories([remote.recv() for remote in remotes] \
+        #     + [base_traj]*(1-args['ignore_original_trajectory']))
+        # trajectories = concat_trajectories(worker_trajectories \
+            # + [base_traj]*(1-args['ignore_original_trajectory']))
 
         #----------------------------------------------------------------
 
-        timestep += len(trajectories[0])
-            
+        # timestep += len(trajectories[0])
+        original_experience = stack_experiences(exp_list)
+        data_tuple = (original_experience*(1-args['ignore_original_trajectory']), [remote.recv() for remote in remotes])
+
         prngkey, _ = jax.random.split(prngkey)
         
         state, (loss, loss_dict) = step(
             state, 
-            trajectories, 
+            # trajectories, 
+            data_tuple, # (Experience(original trajectory), List[dicts](kml trajs))
             prngkey,
             constant_params=args['train_constants'],
             )

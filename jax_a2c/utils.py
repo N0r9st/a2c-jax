@@ -159,6 +159,34 @@ def process_rewards(dones, rewards, bootstrapped_values, gamma):
     k_returns = (rewards*masks[:-1]).sum(axis=0) + bootstrapped_values * masks[-1]
     return k_returns
 
+# @functools.partial(jax.jit, static_argnums=(3, 4))
+def process_rewards_with_entropy(
+    apply_fn, 
+    params, 
+    observations, 
+    actions, 
+    dones, 
+    alpha, 
+    rewards, 
+    bootstrapped_values, 
+    gamma):
+    """ Should be used inside loss_fn
+    """
+
+    masks = jnp.cumprod((1-dones)*gamma, axis=0)/gamma
+    
+    values, (means, log_stds) = apply_fn({'params': params}, observations)
+    logprobs = calculate_action_logprobs(actions, means, log_stds)
+    rewards = rewards - alpha * logprobs
+    k_returns = (rewards*masks[:-1]).sum(axis=0) + bootstrapped_values * masks[-1]
+    return k_returns
+    
+
+def calculate_action_logprobs(actions, means, log_stds):
+    stds = jnp.exp(log_stds)
+    pre_tanh_logprobs = -(actions-means)**2/(2*stds**2) - jnp.log(2*jnp.pi)/2 - log_stds
+    action_logprobs = (pre_tanh_logprobs).sum(axis=-1)
+    return action_logprobs
 
 @functools.partial(jax.jit, static_argnums=(3,))
 def get_mc_returns(rewards, dones, last_values, gamma):
