@@ -166,21 +166,27 @@ def process_rewards_with_entropy(
     observations, 
     actions, 
     dones, 
-    alpha, 
     rewards, 
     bootstrapped_values, 
-    gamma):
+    alpha, 
+    gamma, 
+    ):
     """ Should be used inside loss_fn
     """
 
     masks = jnp.cumprod((1-dones)*gamma, axis=0)/gamma
-    
-    values, (means, log_stds) = apply_fn({'params': params}, observations)
+    len_rollout, n_rollout, obs_shape = observations.shape
+    _, (means, log_stds) = apply_fn({'params': params}, observations.reshape((len_rollout * n_rollout, obs_shape)))
+    actions = actions.reshape((len_rollout * n_rollout, -1))
     logprobs = calculate_action_logprobs(actions, means, log_stds)
+    logprobs = logprobs.reshape((len_rollout, n_rollout))
     rewards = rewards - alpha * logprobs
-    k_returns = (rewards*masks[:-1]).sum(axis=0) + bootstrapped_values * masks[-1]
+    k_returns = (rewards * masks[:-1]).sum(axis=0) + bootstrapped_values * masks[-1]
     return k_returns
-    
+
+vmap_process_rewards_with_entropy = jax.vmap(
+    process_rewards_with_entropy, in_axes=(None, None, 0, 0, 0, 0, 0, None, None), out_axes=0,
+    )
 
 def calculate_action_logprobs(actions, means, log_stds):
     stds = jnp.exp(log_stds)
@@ -231,7 +237,6 @@ def stack_experiences(exp_list):
 @jax.jit
 def flatten_experience(experience: Experience): 
     num_steps, num_envs = experience.observations.shape[:2]
-    # experience = tuple(x[:num_steps].reshape((num_envs*num_steps,) + x.shape[2:]) for x in experience)
     return Experience(
         observations = experience.observations[:num_steps].reshape((num_envs*num_steps,) + experience.observations.shape[2:]),
         actions = experience.actions[:num_steps].reshape((num_envs*num_steps,) + experience.actions.shape[2:]),

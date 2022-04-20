@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 
 from jax_a2c.distributions import evaluate_actions_norm as evaluate_actions
-from jax_a2c.utils import PRNGKey
+from jax_a2c.utils import PRNGKey, process_experience, vmap_process_rewards_with_entropy
 
 Array = Any
 
@@ -14,20 +14,34 @@ Array = Any
 # @functools.partial(jax.jit, static_argnums=(1,6,7))
 def loss_fn(
     params: flax.core.frozen_dict, 
-    apply_fn: Callable, 
-    # observations: Array, 
-    # actions: Array, 
-    # returns: Array, 
+    apply_fn: Callable,  
     data_tuple,
     prngkey: PRNGKey,
     q_fn: Callable,
     constant_params,
     ):
-    orig_exp, mc_rollouts_exp = data_tuple
+    orig_exp, mc_rollouts_exp = data_tuple 
+    # mc_rollouts_exp - List[dict], shape (num_workers, L, M*K*(num_samples//num_workers))
+    (observations, actions, returns, _) = process_experience(
+        orig_exp, 
+        lambda_=constant_params['lambda'], 
+        gamma=constant_params['gamma'],
+        )
+
+    mc_rollouts_returnss = vmap_process_rewards_with_entropy(
+        apply_fn=apply_fn,
+        params=params['policy_params'],
+        observations=mc_rollouts_exp['observations'],
+        actions=mc_rollouts_exp['actions'],
+        dones=mc_rollouts_exp['dones'],
+        rewards=mc_rollouts_exp['rewards'],
+        bootstrapped_values=mc_rollouts_exp['bootstrapped'],
+        alpha=constant_params['alpha'],
+        gamma=constant_params['gamma'],
+    )
     action_logprobs, values, dist_entropy, log_stds, action_samples = evaluate_actions(
         params['policy_params'], 
         apply_fn, observations, actions, prngkey)
-    print(log_stds.shape)
     advantages = returns - values
     loss_dict = {}
     if constant_params['normalize_advantages']:
