@@ -236,17 +236,13 @@ def main(args: dict):
         # timestep += len(trajectories[0])
         original_experience = stack_experiences(exp_list)
         data_tuple = (
-            original_experience*(1-args['ignore_original_trajectory']), 
+            original_experience, 
             jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
                 *[remote.recv() for remote in remotes]
                 )
             )
 
-        for key in data_tuple[1]:
-            print(key, data_tuple[1][key].shape)
-
         prngkey, _ = jax.random.split(prngkey)
-        return
 
         state, (loss, loss_dict) = step(
             state, 

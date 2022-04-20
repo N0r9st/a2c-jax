@@ -6,7 +6,9 @@ import jax
 import jax.numpy as jnp
 
 from jax_a2c.distributions import evaluate_actions_norm as evaluate_actions
-from jax_a2c.utils import PRNGKey, process_experience, vmap_process_rewards_with_entropy
+from jax_a2c.utils import (PRNGKey, process_experience, process_mc_rollouts,
+                           vmap_process_mc_rollouts,
+                           vmap_process_rewards_with_entropy, process_experience_with_entropy)
 
 Array = Any
 
@@ -22,30 +24,51 @@ def loss_fn(
     ):
     orig_exp, mc_rollouts_exp = data_tuple 
     # mc_rollouts_exp - List[dict], shape (num_workers, L, M*K*(num_samples//num_workers))
-    (observations, actions, returns, _) = process_experience(
+
+    (observations, actions, returns, _) = process_experience_with_entropy(
         orig_exp, 
-        lambda_=constant_params['lambda'], 
+        apply_fn,
+        params['policy_params'],
+        lambda_=constant_params['lambda_'], 
         gamma=constant_params['gamma'],
+        alpha=constant_params['alpha'],
         )
 
-    mc_rollouts_returnss = vmap_process_rewards_with_entropy(
-        apply_fn=apply_fn,
-        params=params['policy_params'],
-        observations=mc_rollouts_exp['observations'],
-        actions=mc_rollouts_exp['actions'],
-        dones=mc_rollouts_exp['dones'],
-        rewards=mc_rollouts_exp['rewards'],
-        bootstrapped_values=mc_rollouts_exp['bootstrapped'],
-        alpha=constant_params['alpha'],
-        gamma=constant_params['gamma'],
+    mc_rollouts_returns = vmap_process_rewards_with_entropy(
+        apply_fn,
+        params['policy_params'],
+        mc_rollouts_exp['observations'],
+        mc_rollouts_exp['actions'],
+        mc_rollouts_exp['dones'],
+        mc_rollouts_exp['rewards'],
+        mc_rollouts_exp['bootstrapped'],
+        constant_params['alpha'],
+        constant_params['gamma'],
     )
+
+    mc_observations, mc_actions, mc_returns = vmap_process_mc_rollouts(
+        mc_rollouts_exp['observations'],
+        mc_rollouts_exp['actions'],
+        mc_rollouts_returns,
+        constant_params['M']
+    )
+    mc_observations, mc_actions, mc_returns = tuple(map(
+        lambda x: x.reshape((x.shape[0]*x.shape[1],) + x.shape[2:]), (mc_observations, mc_actions, mc_returns)
+    ))
+
+    observations = jnp.concatenate((observations, mc_observations), axis=0)
+    actions = jnp.concatenate((actions, mc_actions), axis=0)
+    returns = jnp.concatenate((returns, mc_returns), axis=0)
+
     action_logprobs, values, dist_entropy, log_stds, action_samples = evaluate_actions(
         params['policy_params'], 
         apply_fn, observations, actions, prngkey)
     advantages = returns - values
     loss_dict = {}
-    if constant_params['normalize_advantages']:
-        advantages = (advantages - advantages.mean())/(advantages.std() + 1e-6)
+
+    policy_loss = - (jax.lax.stop_gradient(advantages) * action_logprobs).mean()
+    value_loss = ((returns - values)**2).mean()
+
     q_loss = 0
     if constant_params['q_updates'] is not None:
         q_estimations = q_fn({'params': params['qf_params']}, observations, actions)
@@ -54,20 +77,11 @@ def loss_fn(
     if constant_params['q_updates'] == 'rep':
         q_loss += - constant_params['q_loss_coef'] * (
             q_fn(jax.lax.stop_gradient({'params': params['qf_params']}), observations, action_samples).mean() - \
-            constant_params['alpha']*log_stds.mean()
-            )
+            constant_params['alpha']*log_stds.mean())
     elif constant_params['q_updates'] == 'log':
         estimations = q_fn({'params': params['qf_params']}, observations, action_samples)
         estimated_advantages = estimations - values
         q_loss += - (jax.lax.stop_gradient(estimated_advantages) * action_logprobs).mean()
-
-    elif constant_params['q_updates'] == 'just_q':
-        pass
-
-    elif constant_params['q_updates'] == 'add_v_upd':
-        q_loss += ((jax.lax.stop_gradient(q_estimations) - values)**2).mean()
-
-    policy_loss = - (jax.lax.stop_gradient(advantages) * action_logprobs).mean()
 
     if constant_params['q_updates'] == 'rep_only':
         q_loss = ((q_fn({'params': params['qf_params']}, observations, actions) - returns)**2).mean()
@@ -75,10 +89,8 @@ def loss_fn(
                     jax.lax.stop_gradient({'params': params['qf_params']}), 
                     observations, 
                     action_samples).mean()
-                    
         policy_loss=0
 
-    value_loss = ((returns - values)**2).mean()
     loss = constant_params['value_loss_coef']*value_loss + policy_loss - constant_params['entropy_coef']*dist_entropy + q_loss
     loss_dict.update(
         value_loss=value_loss, 

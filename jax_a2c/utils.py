@@ -153,6 +153,42 @@ def process_experience(
         lambda x: np.reshape(x, (trajectory_len,) + x.shape[2:]), trajectories))
     return trajectories
 
+@functools.partial(jax.jit, static_argnums=(1,3,4,5))
+def process_experience_with_entropy(
+    experience: Tuple[Array, ...], 
+    apply_fn,
+    params,
+    gamma: float = .99, 
+    lambda_: float = .95,
+    alpha: float = .1,
+    ):
+    # observations, actions, rewards, values, dones = experience
+    observations = experience.observations
+    actions = experience.actions
+    rewards = experience.rewards
+    values = experience.values
+    dones = experience.dones
+
+    dones = jnp.logical_not(dones).astype(float)
+    advantages = gae_advantages(rewards, dones, values, gamma, lambda_)
+    returns = advantages + values[:-1]
+    trajectories = (observations, actions, returns, advantages)
+    actor_steps, num_agents = observations.shape[:2]
+    # ------- LOGPROBS ----------
+    _, (means, log_stds) = apply_fn(
+        {'params': params}, 
+        observations.reshape((actor_steps* num_agents,) + observations.shape[2:]))
+    actions = actions.reshape((actor_steps * num_agents, -1))
+    logprobs = calculate_action_logprobs(actions, means, log_stds)
+    logprobs = logprobs.reshape((actor_steps, num_agents))
+    returns = returns - alpha * logprobs
+    #------------------------------
+
+    trajectory_len = num_agents * actor_steps
+    trajectories = tuple(map(
+        lambda x: np.reshape(x, (trajectory_len,) + x.shape[2:]), trajectories))
+    return trajectories
+
 @functools.partial(jax.jit, static_argnums=(3, 4))
 def process_rewards(dones, rewards, bootstrapped_values, gamma):
     masks = jnp.cumprod((1-dones)*gamma, axis=0)/gamma
@@ -278,3 +314,13 @@ def substract_from_list(lst, ind):
     for i in ind:
         out.append(lst[i])
     return out
+
+def process_mc_rollouts(observations, actions, returns, M):
+    returns = returns.reshape(M, returns.shape[0]//M).mean(axis=0)
+    observations = observations[0, :observations.shape[1]//M]
+    actions = actions[0, :actions.shape[1]//M]
+    return observations, actions, returns
+
+vmap_process_mc_rollouts = jax.vmap(
+    process_mc_rollouts, in_axes=(0, 0, 0, None), out_axes=0,
+    )

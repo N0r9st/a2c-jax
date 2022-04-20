@@ -139,6 +139,6 @@ def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_step
         actions=all_act_array,
         dones=all_ds_array,
         rewards=all_rewards_array,
-        bootstrapped=jnp.concatenate(all_boot_list)[..., 0][None], # (1, in_states)
+        bootstrapped=jnp.concatenate(all_boot_list)[..., 0], # (1, in_states)
         )
     return rollout_data

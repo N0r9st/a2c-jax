@@ -164,6 +164,8 @@ def update(args, cmd_args):
         q_loss_coef=cmd_args.q_loss_coef,
         alpha=cmd_args.alpha,
         gamma=cmd_args.gamma,
+        lambda_=args['lambda_'],
+        M=args['M'],
     )
 
     args['sampling_type'] = cmd_args.sampling_type
