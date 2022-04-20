@@ -169,24 +169,29 @@ def process_experience_with_entropy(
     values = experience.values
     dones = experience.dones
 
+    # ------- LOGPROBS ----------
+    actor_steps, num_agents = observations.shape[:2]
+
+    _, (means, log_stds) = apply_fn(
+        {'params': params}, 
+        observations.reshape((actor_steps* num_agents,) + observations.shape[2:]))
+    logprobs = calculate_action_logprobs(actions.reshape((actor_steps * num_agents, -1)), means, log_stds)
+    logprobs = logprobs.reshape((actor_steps, num_agents))
+    rewards = rewards - alpha * logprobs
+    #------------------------------
+
     dones = jnp.logical_not(dones).astype(float)
     advantages = gae_advantages(rewards, dones, values, gamma, lambda_)
     returns = advantages + values[:-1]
     trajectories = (observations, actions, returns, advantages)
-    actor_steps, num_agents = observations.shape[:2]
-    # ------- LOGPROBS ----------
-    _, (means, log_stds) = apply_fn(
-        {'params': params}, 
-        observations.reshape((actor_steps* num_agents,) + observations.shape[2:]))
-    actions = actions.reshape((actor_steps * num_agents, -1))
-    logprobs = calculate_action_logprobs(actions, means, log_stds)
-    logprobs = logprobs.reshape((actor_steps, num_agents))
-    returns = returns - alpha * logprobs
-    #------------------------------
+    
+    
 
     trajectory_len = num_agents * actor_steps
     trajectories = tuple(map(
-        lambda x: np.reshape(x, (trajectory_len,) + x.shape[2:]), trajectories))
+        lambda x: jnp.reshape(x, (trajectory_len,) + x.shape[2:]), 
+        trajectories
+        ))
     return trajectories
 
 @functools.partial(jax.jit, static_argnums=(3, 4))
