@@ -69,7 +69,7 @@ def loss_fn(
     policy_loss = - (jax.lax.stop_gradient(advantages) * action_logprobs).mean()
     value_loss = ((returns - values)**2).mean()
 
-    q_loss = 0
+    q_loss = jnp.array(0)
     if constant_params['q_updates'] is not None:
         q_estimations = q_fn({'params': params['qf_params']}, observations, actions)
         q_loss = ((q_estimations - returns)**2).mean()
@@ -103,7 +103,7 @@ def loss_fn(
     return loss, loss_dict
 
 # @functools.partial(jax.jit, static_argnums=(3,4,5,6,7))
-# @functools.partial(jax.jit, static_argnums=(3,))
+@functools.partial(jax.jit, static_argnums=(3,))
 def step(state, data_tuple, prngkey,
     constant_params):
     
