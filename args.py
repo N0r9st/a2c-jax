@@ -1,5 +1,5 @@
 import argparse
-possible_types = ['sample-KM-rollouts-fast']
+possible_types = ['sample-KM-rollouts-fast', 'standart']
 possible_q_updates = [None, 'rep', 'log', 'just_q', 'rep_only', 'add_v_upd']
 possible_policy_types = ['DiagGaussianPolicy', 'DiagGaussianStateDependentPolicy']
 possible_sampling_types = ['uniform', 'adv',]
@@ -54,6 +54,8 @@ def parse_args():
     parser.add_argument('--ignore-original-trajectory', action='store_true', default=False)
     parser.add_argument('--km-determenistic', action='store_true', default=True)
 
+    parser.add_argument('--gradstop', type=str, default='full')
+
     args = parser.parse_args()
     return args
 
@@ -104,8 +106,10 @@ def update(args, cmd_args):
     args['save'] = cmd_args.save
     args['save_every'] = cmd_args.save_every
 
-    assert cmd_args.type in possible_types
-    args['type'] = cmd_args.type
+    if cmd_args.type in possible_types:
+        args['type'] = cmd_args.type
+    else:
+        raise NotImplementedError
 
     args['K'] = cmd_args.K
     args['L'] = cmd_args.L
@@ -166,6 +170,8 @@ def update(args, cmd_args):
         gamma=cmd_args.gamma,
         lambda_=args['lambda_'],
         M=args['M'],
+        type=args['type'],
+        gradstop=cmd_args.gradstop,
     )
 
     args['sampling_type'] = cmd_args.sampling_type

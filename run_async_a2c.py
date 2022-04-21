@@ -93,17 +93,19 @@ def main(args: dict):
     train_obs_rms = envs.obs_rms
     train_ret_rms = envs.ret_rms
 
+    
     # -----------------------------------------
     #            STARTING WORKERS
     #-----------------------------------------
-    if args['num_workers'] is not None:
-        remotes = run_workers(
-            _worker, 
-            k_envs_fn, 
-            args['num_workers'], 
-            (envs.observation_space, envs.action_space),
-            ctx,
-            split_between_devices=args['split_between_devices'])
+    if args['type'] != 'standart':
+        if args['num_workers'] is not None:
+            remotes = run_workers(
+                _worker, 
+                k_envs_fn, 
+                args['num_workers'], 
+                (envs.observation_space, envs.action_space),
+                ctx,
+                split_between_devices=args['split_between_devices'])
     # ------------------------------------------
 
     policy_model = POLICY_CLASSES[args['policy_type']](
@@ -179,68 +181,72 @@ def main(args: dict):
         #------------------------------------------------
         #              WORKER ROLLOUTS
         #------------------------------------------------
-        exp_list = []
-        for remote in remotes:
+        if args['type'] != 'standart':
+            exp_list = []
+            for remote in remotes:
 
+                prngkey, _ = jax.random.split(prngkey)
+                next_obs_and_dones, experience = collect_experience(
+                    prngkey, 
+                    next_obs_and_dones, 
+                    envs, 
+                    num_steps=args['num_steps']//args['num_workers'], 
+                    policy_fn=policy_fn,)
+                exp_list.append(experience)
+
+
+                base_traj_part = process_experience(experience, gamma=args['gamma'], lambda_=args['lambda_'])
+                add_args = {}
+                if args['sampling_type']=='adv':
+                    advs = base_traj_part[3].reshape((args['num_steps']//args['num_workers'], args['num_envs']))
+                    add_args['advantages'] = advs
+                    add_args['sampling_prob_temp'] = args['sampling_prob_temp']
+                    
+                sampled_exp = select_random_states(prngkey, args['n_samples']//args['num_workers'], experience, type=args['sampling_type'], **add_args)
+                sampled_exp = Experience(
+                    observations=sampled_exp.observations,
+                    actions=sampled_exp.actions,
+                    rewards=sampled_exp.rewards,
+                    values=sampled_exp.values,
+                    dones=sampled_exp.dones,
+                    states=sampled_exp.states,
+                )
+                prngkey, _ = jax.random.split(prngkey)
+                to_worker = dict(
+                    prngkey=prngkey,
+                    experience=sampled_exp,
+                    gamma=args['gamma'],
+                    policy_fn=functools.partial(
+                        _apply_policy_fn, 
+                        params=state.params['policy_params'], 
+                        determenistic=args['km_determenistic']),
+                    max_steps=args['L'],
+                    K=args['K'],
+                    M=args['M'],
+                    train_obs_rms=train_obs_rms,
+                    train_ret_rms=train_ret_rms,
+                    )
+                remote.send(to_worker)
+            #----------------------------------------------------------------
+            original_experience = stack_experiences(exp_list)
+            data_tuple = (
+                original_experience, 
+                jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
+                    *[remote.recv() for remote in remotes]
+                    )
+                )
+        else:
             prngkey, _ = jax.random.split(prngkey)
             next_obs_and_dones, experience = collect_experience(
                 prngkey, 
                 next_obs_and_dones, 
                 envs, 
-                num_steps=args['num_steps']//args['num_workers'], 
+                num_steps=args['num_steps'], 
                 policy_fn=policy_fn,)
-            exp_list.append(experience)
-
-
-            base_traj_part = process_experience(experience, gamma=args['gamma'], lambda_=args['lambda_'])
-            add_args = {}
-            if args['sampling_type']=='adv':
-                advs = base_traj_part[3].reshape((args['num_steps']//args['num_workers'], args['num_envs']))
-                add_args['advantages'] = advs
-                add_args['sampling_prob_temp'] = args['sampling_prob_temp']
-                
-            sampled_exp = select_random_states(prngkey, args['n_samples']//args['num_workers'], experience, type=args['sampling_type'], **add_args)
-            sampled_exp = Experience(
-                observations=sampled_exp.observations,
-                actions=sampled_exp.actions,
-                rewards=sampled_exp.rewards,
-                values=sampled_exp.values,
-                dones=sampled_exp.dones,
-                states=sampled_exp.states,
-            )
-            prngkey, _ = jax.random.split(prngkey)
-            to_worker = dict(
-                prngkey=prngkey,
-                experience=sampled_exp,
-                gamma=args['gamma'],
-                policy_fn=functools.partial(
-                    _apply_policy_fn, 
-                    params=state.params['policy_params'], 
-                    determenistic=args['km_determenistic']),
-                max_steps=args['L'],
-                K=args['K'],
-                M=args['M'],
-                train_obs_rms=train_obs_rms,
-                train_ret_rms=train_ret_rms,
+            data_tuple = (
+                experience, 
+                None,
                 )
-            remote.send(to_worker)
-        # base_traj = process_experience(stack_experiences(exp_list), gamma=args['gamma'], lambda_=args['lambda_'])
-        # worker_trajectories, w_observations_actions = tuple(zip(*[remote.recv() for remote in remotes]))
-        # trajectories = concat_trajectories([remote.recv() for remote in remotes] \
-        #     + [base_traj]*(1-args['ignore_original_trajectory']))
-        # trajectories = concat_trajectories(worker_trajectories \
-            # + [base_traj]*(1-args['ignore_original_trajectory']))
-
-        #----------------------------------------------------------------
-
-        # timestep += len(trajectories[0])
-        original_experience = stack_experiences(exp_list)
-        data_tuple = (
-            original_experience, 
-            jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
-                *[remote.recv() for remote in remotes]
-                )
-            )
 
         prngkey, _ = jax.random.split(prngkey)
 
