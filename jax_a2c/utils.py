@@ -21,7 +21,7 @@ Experience = namedtuple(
     ['observations', 'actions', 'rewards', 'values', 'dones', 'states'])
 
 class QTrainState(TrainState):
-    q_fn: Callable  = struct.field(pytree_node=False)
+    q_fn: Callable = struct.field(pytree_node=False)
     
 
 def create_train_state(

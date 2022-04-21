@@ -59,6 +59,7 @@ def loss_fn(
     observations = jnp.concatenate((observations, mc_observations), axis=0)
     actions = jnp.concatenate((actions, mc_actions), axis=0)
     returns = jnp.concatenate((returns, mc_returns), axis=0)
+    returns = jax.lax.stop_gradient(returns)
 
     action_logprobs, values, dist_entropy, log_stds, action_samples = evaluate_actions(
         params['policy_params'], 
