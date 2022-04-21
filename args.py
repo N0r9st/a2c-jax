@@ -1,6 +1,6 @@
 import argparse
 possible_types = ['sample-KM-rollouts-fast', 'standart']
-possible_q_updates = [None, 'rep', 'log', 'just_q', 'rep_only', 'add_v_upd']
+possible_q_updates = [None, 'rep', 'log', 'just_q', 'rep_only', 'add_v_upd', 'none']
 possible_policy_types = ['DiagGaussianPolicy', 'DiagGaussianStateDependentPolicy']
 possible_sampling_types = ['uniform', 'adv',]
 def parse_args():
@@ -148,6 +148,8 @@ def update(args, cmd_args):
 
     if cmd_args.q_updates in possible_q_updates:
         args['q_updates'] = cmd_args.q_updates
+        if cmd_args.q_updates == 'none':
+            args['q_updates'] = None
     else:
         raise NotImplementedError
 

@@ -92,7 +92,7 @@ class DiagGaussianStateDependentPolicy(nn.Module):
         # action_log_stds = jnp.repeat(action_log_stds.reshape(1,-1), axis=0, repeats=x.shape[0])
 
         for h_size in self.hidden_sizes:
-            x = nn.Dense(features=h_size, kernel_init=nn.initializers.orthogonal(scale=jnp.sqrt(2)))(x)
+            x = nn.Dense(features=h_size, kernel_init=nn.initializers.orthogonal(scale=jnp.sqrt(1e-3)))(x)
             x = nn.tanh(x)
         action_log_stds = nn.Dense(
             features=self.action_dim, name='Log_stds', 

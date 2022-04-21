@@ -72,7 +72,7 @@ def loss_fn(
         advantages = jax.lax.stop_gradient(returns) - values
     elif constant_params['gradstop'] == "none":
         advantages = returns - values
-        
+
     loss_dict = {}
 
     policy_loss = - (advantages * action_logprobs).mean()
@@ -107,7 +107,11 @@ def loss_fn(
         dist_entropy=dist_entropy, 
         advantages_max = jnp.abs(advantages).max(),
         min_std=jnp.exp(log_stds).min(),
-        q_loss=q_loss
+        q_loss=q_loss,
+        mean_returns=returns.mean(),
+        std_returns=returns.std(),
+        mean_logprog=action_logprobs.mean(),
+        std_logprog=action_logprobs.std(),
         )
     return loss, loss_dict
 
