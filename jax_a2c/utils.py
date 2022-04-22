@@ -153,7 +153,7 @@ def process_experience(
         lambda x: np.reshape(x, (trajectory_len,) + x.shape[2:]), trajectories))
     return trajectories
 
-@functools.partial(jax.jit, static_argnums=(1,3,4,5))
+@functools.partial(jax.jit, static_argnums=(1,3,4,5,6))
 def process_experience_with_entropy(
     experience: Tuple[Array, ...], 
     apply_fn,
@@ -161,6 +161,7 @@ def process_experience_with_entropy(
     gamma: float = .99, 
     lambda_: float = .95,
     alpha: float = .1,
+    entropy: str = 'estimation', # estimation/real
     ):
     # observations, actions, rewards, values, dones = experience
     observations = experience.observations
@@ -175,9 +176,12 @@ def process_experience_with_entropy(
     _, (means, log_stds) = apply_fn(
         {'params': params}, 
         observations.reshape((actor_steps* num_agents,) + observations.shape[2:]))
-    logprobs = calculate_action_logprobs(actions.reshape((actor_steps * num_agents, -1)), means, log_stds)
-    logprobs = logprobs.reshape((actor_steps, num_agents))
-    rewards = rewards - alpha * logprobs
+    if entropy == 'estimation':
+        logprobs = calculate_action_logprobs(actions.reshape((actor_steps * num_agents, -1)), means, log_stds)
+        entropy = - logprobs.reshape((actor_steps, num_agents))
+    elif entropy == 'real':
+        entropy = (0.5 + 0.5 * jnp.log(2 * jnp.pi) + log_stds).sum(-1).reshape((actor_steps, num_agents))
+    rewards = rewards + alpha * entropy
     #------------------------------
 
     dones = jnp.logical_not(dones).astype(float)
@@ -211,6 +215,7 @@ def process_rewards_with_entropy(
     bootstrapped_values, 
     alpha, 
     gamma, 
+    entropy: str, # estimation / real
     ):
     """ Should be used inside loss_fn
     """
@@ -218,15 +223,18 @@ def process_rewards_with_entropy(
     masks = jnp.cumprod((1-dones)*gamma, axis=0)/gamma
     len_rollout, n_rollout, obs_shape = observations.shape
     _, (means, log_stds) = apply_fn({'params': params}, observations.reshape((len_rollout * n_rollout, obs_shape)))
-    actions = actions.reshape((len_rollout * n_rollout, -1))
-    logprobs = calculate_action_logprobs(actions, means, log_stds)
-    logprobs = logprobs.reshape((len_rollout, n_rollout))
-    rewards = rewards - alpha * logprobs
+    if entropy == 'estimation':
+        actions = actions.reshape((len_rollout * n_rollout, -1))
+        logprobs = calculate_action_logprobs(actions, means, log_stds)
+        entropy = - logprobs.reshape((len_rollout, n_rollout))
+    elif entropy == 'real':
+        entropy = (0.5 + 0.5 * jnp.log(2 * jnp.pi) + log_stds).sum(-1).reshape((len_rollout, n_rollout,))
+    rewards = rewards + alpha * entropy
     k_returns = (rewards * masks[:-1]).sum(axis=0) + bootstrapped_values * masks[-1]
     return k_returns
 
 vmap_process_rewards_with_entropy = jax.vmap(
-    process_rewards_with_entropy, in_axes=(None, None, 0, 0, 0, 0, 0, None, None), out_axes=0,
+    process_rewards_with_entropy, in_axes=(None, None, 0, 0, 0, 0, 0, None, None, None), out_axes=0,
     )
 
 def calculate_action_logprobs(actions, means, log_stds):

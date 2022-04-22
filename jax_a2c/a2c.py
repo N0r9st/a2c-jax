@@ -20,8 +20,8 @@ def loss_fn(
     q_fn: Callable,
     constant_params,
     ):
-    orig_exp, mc_rollouts_exp = data_tuple 
-    # mc_rollouts_exp - List[dict], shape (num_workers, L, M*K*(num_samples//num_workers))
+    orig_exp, mc_rollouts_exp = data_tuple # mc_rollouts_exp - List[dict], 
+    # shape (num_workers, L, M*K*(num_samples//num_workers))
 
     (observations, actions, returns_loggrad, _) = process_experience_with_entropy(
         orig_exp, 
@@ -30,6 +30,7 @@ def loss_fn(
         lambda_=constant_params['lambda_'], 
         gamma=constant_params['gamma'],
         alpha=constant_params['alpha'],
+        entropy=constant_params['entropy'],
         )
     if constant_params['type'] != 'standart':
         mc_rollouts_returns = vmap_process_rewards_with_entropy(
@@ -42,6 +43,7 @@ def loss_fn(
             mc_rollouts_exp['bootstrapped'],
             constant_params['alpha'],
             constant_params['gamma'],
+            constant_params['entropy'],
         )
 
         mc_observations, mc_actions, mc_returns = vmap_process_mc_rollouts(
@@ -65,13 +67,13 @@ def loss_fn(
         apply_fn, observations, actions, prngkey)
     # advantages = returns - values
     if constant_params['gradstop'] == "full":
-        advantages = jax.lax.stop_gradient(returns - values)
+        advantages = jax.lax.stop_gradient(returns_loggrad - values)
     elif constant_params['gradstop'] == "val":
-        advantages = returns - jax.lax.stop_gradient(values)
+        advantages = returns_loggrad - jax.lax.stop_gradient(values)
     elif constant_params['gradstop'] == "ret":
-        advantages = jax.lax.stop_gradient(returns) - values
+        advantages = jax.lax.stop_gradient(returns_loggrad) - values
     elif constant_params['gradstop'] == "none":
-        advantages = returns - values
+        advantages = returns_loggrad - values
 
     loss_dict = {}
 
@@ -119,7 +121,6 @@ def loss_fn(
 def step(state, data_tuple, prngkey,
     constant_params):
     
-    # observations, actions, returns, advantages = trajectories
     (loss, loss_dict), grads = jax.value_and_grad(loss_fn, has_aux=True)(
         state.params, 
         state.apply_fn, 

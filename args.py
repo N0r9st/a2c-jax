@@ -56,6 +56,8 @@ def parse_args():
 
     parser.add_argument('--gradstop', type=str, default='full')
 
+    parser.add_argument('--entropy', type=str, default='estimation')
+
     args = parser.parse_args()
     return args
 
@@ -174,6 +176,7 @@ def update(args, cmd_args):
         M=args['M'],
         type=args['type'],
         gradstop=cmd_args.gradstop,
+        entropy=cmd_args.entropy,
     )
 
     args['sampling_type'] = cmd_args.sampling_type
@@ -181,6 +184,7 @@ def update(args, cmd_args):
     args['n_samples'] = cmd_args.n_samples
     args['ignore_original_trajectory'] = cmd_args.ignore_original_trajectory
     args['km_determenistic'] = cmd_args.km_determenistic
+
     
     return args
 
