@@ -23,7 +23,7 @@ def loss_fn(
     orig_exp, mc_rollouts_exp = data_tuple # mc_rollouts_exp - List[dict], 
     # shape (num_workers, L, M*K*(num_samples//num_workers))
 
-    (observations, actions, returns_loggrad, _) = process_experience_with_entropy(
+    (observations, actions, returns_loggrad, _), entropy = process_experience_with_entropy(
         orig_exp, 
         apply_fn,
         params['policy_params'],
@@ -114,6 +114,7 @@ def loss_fn(
         std_returns=returns.std(),
         mean_logprog=action_logprobs.mean(),
         std_logprog=action_logprobs.std(),
+        entropy=entropy.mean()
         )
     return loss, loss_dict
 

@@ -196,7 +196,7 @@ def process_experience_with_entropy(
         lambda x: jnp.reshape(x, (trajectory_len,) + x.shape[2:]), 
         trajectories
         ))
-    return trajectories
+    return trajectories, entropy
 
 @functools.partial(jax.jit, static_argnums=(3, 4))
 def process_rewards(dones, rewards, bootstrapped_values, gamma):
