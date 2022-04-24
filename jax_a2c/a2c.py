@@ -84,11 +84,14 @@ def loss_fn(
     if constant_params['q_updates'] is not None:
         q_estimations = q_fn({'params': params['qf_params']}, observations, actions)
         q_loss = ((q_estimations - returns)**2).mean()
+
+    if constant_params['entropy'] =='estimation':
+        dist_entropy = - log_stds.mean()
         
     if constant_params['q_updates'] == 'rep':
         q_loss += - constant_params['q_loss_coef'] * (
-            q_fn(jax.lax.stop_gradient({'params': params['qf_params']}), observations, action_samples).mean() - \
-            constant_params['alpha']*log_stds.mean())
+            q_fn(jax.lax.stop_gradient({'params': params['qf_params']}), observations, action_samples).mean() + \
+            constant_params['alpha']*dist_entropy)
 
     elif constant_params['q_updates'] == 'log':
         sampled_estimations = q_fn({'params': params['qf_params']}, observations, action_samples)
@@ -96,10 +99,11 @@ def loss_fn(
         q_loss += - (jax.lax.stop_gradient(estimated_advantages) * action_logprobs).mean()
 
     elif constant_params['q_updates'] == 'rep_only':
-        policy_loss = - constant_params['q_loss_coef'] * q_fn(
+        policy_loss = - constant_params['q_loss_coef'] * (q_fn(
                     jax.lax.stop_gradient({'params': params['qf_params']}), 
                     observations, 
-                    action_samples).mean()
+                    action_samples).mean() + \
+            constant_params['alpha']*dist_entropy)
         value_loss = 0
 
     loss = constant_params['value_loss_coef']*value_loss + policy_loss - constant_params['entropy_coef']*dist_entropy + q_loss
