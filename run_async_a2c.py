@@ -17,7 +17,7 @@ from jax_a2c.evaluation import eval, q_eval
 from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy
 from jax_a2c.utils import (Experience, collect_experience, create_train_state, select_random_states,
                            process_experience, concat_trajectories, stack_experiences)
-from jax_a2c.km_mc_traj import km_mc_rollouts_trajectories, km_mc_rollouts
+from jax_a2c.km_mc_traj import km_mc_rollouts
 from jax_a2c.saving import save_state, load_state
 from flax.core import freeze
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
@@ -272,8 +272,7 @@ def main(args: dict):
                 'time/timestep': timestep, 
                 'time/updates': current_update, 
                 'time/time': epoch_time,
-                'evaluation/score': eval_return,
-                'evaluation/q-score': q_eval_return}, 
+                'evaluation/score': eval_return,}, 
                 commit=False, step=current_update)
             epoch_times = []
 

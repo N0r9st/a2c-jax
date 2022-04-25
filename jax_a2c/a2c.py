@@ -23,7 +23,7 @@ def loss_fn(
     orig_exp, mc_rollouts_exp = data_tuple # mc_rollouts_exp - List[dict], 
     # shape (num_workers, L, M*K*(num_samples//num_workers))
 
-    (observations, actions, returns_loggrad, _), entropy = process_experience_with_entropy(
+    (observations, actions, returns_loggrad, _, next_observations), entropy = process_experience_with_entropy(
         orig_exp, 
         apply_fn,
         params['policy_params'],
@@ -65,7 +65,9 @@ def loss_fn(
     action_logprobs, values, dist_entropy, log_stds, action_samples = evaluate_actions(
         params['policy_params'], 
         apply_fn, observations, actions, prngkey)
-    # advantages = returns - values
+    #--------------------------------
+    #          ADVANTAGES
+    #--------------------------------
     if constant_params['gradstop'] == "full":
         advantages = jax.lax.stop_gradient(returns_loggrad - values)
     elif constant_params['gradstop'] == "val":
@@ -75,15 +77,28 @@ def loss_fn(
     elif constant_params['gradstop'] == "none":
         advantages = returns_loggrad - values
 
+    #----------------------------------------
+    #               BASIC UPDATE
+    #----------------------------------------
     loss_dict = {}
 
     policy_loss = - (advantages * action_logprobs).mean()
     value_loss = ((returns - values)**2).mean()
 
     q_loss = jnp.array(0)
+    
+    # if constant_params['q_updates'] is not None:
+    #     q_estimations = q_fn({'params': params['qf_params']}, observations, actions)
+    #     q_loss = ((q_estimations - returns)**2).mean()
+
+    #     rand_actions = jax.random.uniform(prngkey, shape=(len(observations), 6))
+    #     rand_q_estimations = q_fn({'params': params['qf_params']}, observations, rand_actions)
     if constant_params['q_updates'] is not None:
         q_estimations = q_fn({'params': params['qf_params']}, observations, actions)
         q_loss = ((q_estimations - returns)**2).mean()
+
+        rand_actions = jax.random.uniform(prngkey, shape=(len(observations), 6))
+        rand_q_estimations = q_fn({'params': params['qf_params']}, observations, rand_actions)
 
     if constant_params['entropy'] =='estimation':
         dist_entropy = - log_stds.mean()
@@ -118,7 +133,9 @@ def loss_fn(
         std_returns=returns.std(),
         mean_logprog=action_logprobs.mean(),
         std_logprog=action_logprobs.std(),
-        entropy=entropy.mean()
+        entropy=entropy.mean(),
+        baseline_q=q_estimations.mean(),
+        current_q=rand_q_estimations.mean(),
         )
     return loss, loss_dict
 

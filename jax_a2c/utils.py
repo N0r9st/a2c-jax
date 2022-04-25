@@ -18,7 +18,7 @@ PRNGKey = Any
 ModelClass = Any
 Experience = namedtuple(
     'Experience', 
-    ['observations', 'actions', 'rewards', 'values', 'dones', 'states'])
+    ['observations', 'actions', 'rewards', 'values', 'dones', 'states', 'next_observations'])
 
 class QTrainState(TrainState):
     q_fn: Callable = struct.field(pytree_node=False)
@@ -102,6 +102,7 @@ def collect_experience(
     values_list = []
     dones_list = [dones]
     states_list = [envs.get_state()]
+    next_observations_list = []
 
     for _ in range(num_steps):
         observations = next_observations
@@ -114,6 +115,8 @@ def collect_experience(
         values_list.append(values[..., 0])
         dones_list.append(dones)
         states_list.append(envs.get_state())
+        next_observations_list.append(next_observations)
+        
         
 
     _, prngkey = jax.random.split(prngkey)
@@ -127,6 +130,7 @@ def collect_experience(
         values=np.stack(values_list),
         dones=np.stack(dones_list),
         states=states_list,
+        next_observations=np.stack(next_observations_list)
     )
     return (next_observations, dones), experience
 
@@ -169,6 +173,7 @@ def process_experience_with_entropy(
     rewards = experience.rewards
     values = experience.values
     dones = experience.dones
+    next_observations = experience.next_observations
 
     # ------- LOGPROBS ----------
     actor_steps, num_agents = observations.shape[:2]
@@ -187,7 +192,7 @@ def process_experience_with_entropy(
     dones = jnp.logical_not(dones).astype(float)
     advantages = gae_advantages(rewards, dones, values, gamma, lambda_)
     returns = advantages + values[:-1]
-    trajectories = (observations, actions, returns, advantages)
+    trajectories = (observations, actions, returns, advantages, next_observations)
     
     
 
@@ -267,6 +272,7 @@ def stack_experiences(exp_list):
     rewards = jnp.concatenate([x.rewards for x in exp_list], axis=0)
     values = jnp.concatenate([x.values[:num_steps] for x in exp_list], axis=0)
     dones = jnp.concatenate([x.dones[:num_steps] for x in exp_list], axis=0)
+    next_observations = jnp.concatenate([x.next_observations for x in exp_list], axis=0)
     states = []
     for st in exp_list:
         states += st.states[:num_steps]
@@ -279,7 +285,8 @@ def stack_experiences(exp_list):
         rewards=rewards,
         values=values,
         dones=dones,
-        states=states
+        states=states,
+        next_observations=next_observations
     )
 
 
@@ -292,7 +299,8 @@ def flatten_experience(experience: Experience):
         rewards = experience.rewards[:num_steps].reshape((num_envs*num_steps,) + experience.rewards.shape[2:]),
         values = experience.values[:num_steps].reshape((num_envs*num_steps,) + experience.values.shape[2:]),
         dones = experience.dones[:num_steps].reshape((num_envs*num_steps,) + experience.dones.shape[2:]),
-        states = flatten_list(experience.states[:num_steps]
+        states = flatten_list(experience.states[:num_steps],
+        next_observations=experience.next_observations.reshape((num_envs*num_steps,) + experience.next_observations.shape[2:])
             )
     )
 
@@ -315,6 +323,7 @@ def select_experience_random(prngkey, n, experience, replace=False, p=None):
                     values=experience.values[choices],
                     dones=experience.dones[choices],
                     states=substract_from_list(experience.states, choices),
+                    next_observations=experience.next_observations[choices]
                         )
     
 def flatten_list(lst):
