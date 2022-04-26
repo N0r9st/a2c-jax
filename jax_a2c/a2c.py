@@ -6,7 +6,8 @@ import jax
 import jax.numpy as jnp
 
 from jax_a2c.distributions import evaluate_actions_norm as evaluate_actions
-from jax_a2c.utils import (PRNGKey, process_experience, process_mc_rollouts,
+from jax_a2c.distributions import sample_action_from_normal as sample_action
+from jax_a2c.utils import (PRNGKey, calculate_action_logprobs, process_mc_rollouts,
                            vmap_process_mc_rollouts,
                            vmap_process_rewards_with_entropy, process_experience_with_entropy)
 
@@ -23,7 +24,9 @@ def loss_fn(
     orig_exp, mc_rollouts_exp = data_tuple # mc_rollouts_exp - List[dict], 
     # shape (num_workers, L, M*K*(num_samples//num_workers))
 
-    (observations, actions, returns_loggrad, _, next_observations), entropy = process_experience_with_entropy(
+    (observations, 
+    actions, returns_loggrad, _, 
+    next_observations, next_dones, rewards), entropy = process_experience_with_entropy(
         orig_exp, 
         apply_fn,
         params['policy_params'],
@@ -95,7 +98,27 @@ def loss_fn(
     #     rand_q_estimations = q_fn({'params': params['qf_params']}, observations, rand_actions)
     if constant_params['q_updates'] is not None:
         q_estimations = q_fn({'params': params['qf_params']}, observations, actions)
-        q_loss = ((q_estimations - returns)**2).mean()
+
+        rand_actions = jax.random.uniform(prngkey, shape=(len(observations), 6))
+        rand_q_estimations = q_fn({'params': params['qf_params']}, observations, rand_actions)
+
+        if constant_params['q_targets']=='mc':
+            target_q = returns
+        elif constant_params['q_targets']=='bootstrap':
+            target_q = make_q_entropy_targets(
+                prngkey,
+                params['policy_params'],
+                params['qf_params'],
+                apply_fn,
+                q_fn,
+                rewards,
+                constant_params['gamma'],
+                next_dones,
+                next_observations,
+                constant_params['entropy'],
+                constant_params['alpha'],
+            )
+        q_loss = ((q_estimations - jax.lax.stop_gradient(target_q))**2).mean()
 
         rand_actions = jax.random.uniform(prngkey, shape=(len(observations), 6))
         rand_q_estimations = q_fn({'params': params['qf_params']}, observations, rand_actions)
@@ -153,3 +176,28 @@ def step(state, data_tuple, prngkey,
     new_state = state.apply_gradients(grads=grads)
     return new_state, (loss, loss_dict)
     
+
+def make_q_entropy_targets(
+    prngkey,
+    policy_params, 
+    q_params, 
+    policy_fn, 
+    q_fn, 
+    rewards, 
+    gamma, 
+    dones,
+    next_observations, 
+    entropy: str,
+    alpha: float,): 
+
+    values, (means, log_stds) = policy_fn({'params': policy_params}, next_observations)
+    action_samples = sample_action(prngkey, means, log_stds)
+    if entropy=="estimation":
+        logprobs = calculate_action_logprobs(action_samples, means, log_stds)
+        entropy = - logprobs
+    elif entropy=="real":
+        entropy = (0.5 + 0.5 * jnp.log(2 * jnp.pi) + log_stds).sum(-1)
+    
+    target_q_values = q_fn({'params': q_params}, next_observations, action_samples) + alpha *  entropy
+    q_target = rewards + (1. - dones) * gamma * target_q_values
+    return q_target

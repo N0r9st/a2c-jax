@@ -31,3 +31,4 @@ def evaluate_actions_norm(params, apply_fn, observations, actions, prngkey):
     dist_entropy = (0.5 + 0.5 * jnp.log(2 * jnp.pi) + log_stds).sum(-1).mean()
     action_samples = sample_action_from_normal(prngkey, means, log_stds)
     return action_logprobs, values[..., 0], dist_entropy, log_stds, action_samples  
+    

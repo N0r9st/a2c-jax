@@ -58,6 +58,8 @@ def parse_args():
 
     parser.add_argument('--entropy', type=str, default='estimation')
 
+    parser.add_argument('--q-targets', type=str, default='mc')
+
     args = parser.parse_args()
     return args
 
@@ -177,6 +179,7 @@ def update(args, cmd_args):
         type=args['type'],
         gradstop=cmd_args.gradstop,
         entropy=cmd_args.entropy,
+        q_targets=cmd_args.q_targets,
     )
 
     args['sampling_type'] = cmd_args.sampling_type

@@ -140,7 +140,6 @@ def process_experience(
     gamma: float = .99, 
     lambda_: float = .95,
     ):
-    # observations, actions, rewards, values, dones = experience
     observations = experience.observations
     actions = experience.actions
     rewards = experience.rewards
@@ -186,13 +185,13 @@ def process_experience_with_entropy(
         entropy = - logprobs.reshape((actor_steps, num_agents))
     elif entropy == 'real':
         entropy = (0.5 + 0.5 * jnp.log(2 * jnp.pi) + log_stds).sum(-1).reshape((actor_steps, num_agents))
-    rewards = rewards + alpha * entropy
+    entropy_rewards = rewards + alpha * entropy
     #------------------------------
 
     dones = jnp.logical_not(dones).astype(float)
-    advantages = gae_advantages(rewards, dones, values, gamma, lambda_)
+    advantages = gae_advantages(entropy_rewards, dones, values, gamma, lambda_)
     returns = advantages + values[:-1]
-    trajectories = (observations, actions, returns, advantages, next_observations)
+    trajectories = (observations, actions, returns, advantages, next_observations, dones[1:], rewards)
     
     
 

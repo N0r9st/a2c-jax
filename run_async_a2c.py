@@ -39,7 +39,6 @@ def _worker(remote, k_remotes, parent_remote, spaces, device) -> None:
     
     k_envs.observation_space, k_envs.action_space = spaces
     k_envs = VecNormalize(k_envs, training=False)
-    # km_mc_rollouts_trajectories_ = functools.partial(km_mc_rollouts_trajectories, k_envs=k_envs)
     km_mc_rollouts_ = functools.partial(km_mc_rollouts, k_envs=k_envs)
     while True:
         try:
@@ -205,11 +204,12 @@ def main(args: dict):
                 sampled_exp = select_random_states(prngkey, args['n_samples']//args['num_workers'], experience, type=args['sampling_type'], **add_args)
                 sampled_exp = Experience(
                     observations=sampled_exp.observations,
-                    actions=sampled_exp.actions,
-                    rewards=sampled_exp.rewards,
-                    values=sampled_exp.values,
+                    actions=None,# sampled_exp.actions,
+                    rewards=None,# sampled_exp.rewards,
+                    values=None,# sampled_exp.values,
                     dones=sampled_exp.dones,
                     states=sampled_exp.states,
+                    next_observations= None,
                 )
                 prngkey, _ = jax.random.split(prngkey)
                 to_worker = dict(
