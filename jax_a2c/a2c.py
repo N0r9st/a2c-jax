@@ -89,13 +89,9 @@ def loss_fn(
     value_loss = ((returns - values)**2).mean()
 
     q_loss = jnp.array(0)
-    
-    # if constant_params['q_updates'] is not None:
-    #     q_estimations = q_fn({'params': params['qf_params']}, observations, actions)
-    #     q_loss = ((q_estimations - returns)**2).mean()
+    q_estimations = jnp.array(0)
+    rand_q_estimations = jnp.array(0)
 
-    #     rand_actions = jax.random.uniform(prngkey, shape=(len(observations), 6))
-    #     rand_q_estimations = q_fn({'params': params['qf_params']}, observations, rand_actions)
     if constant_params['q_updates'] is not None:
         q_estimations = q_fn({'params': params['qf_params']}, observations, actions)
 
@@ -105,6 +101,8 @@ def loss_fn(
         if constant_params['q_targets']=='mc':
             target_q = returns
         elif constant_params['q_targets']=='bootstrap':
+            if constant_params['type'] != 'standart':
+                raise NotImplementedError
             target_q = make_q_entropy_targets(
                 prngkey,
                 params['policy_params'],
@@ -157,8 +155,9 @@ def loss_fn(
         mean_logprog=action_logprobs.mean(),
         std_logprog=action_logprobs.std(),
         entropy=entropy.mean(),
-        baseline_q=q_estimations.mean(),
-        current_q=rand_q_estimations.mean(),
+        current_q=q_estimations.mean(),
+        baseline_q=rand_q_estimations.mean(),
+        difference_q =q_estimations.mean() - rand_q_estimations.mean(),
         )
     return loss, loss_dict
 
