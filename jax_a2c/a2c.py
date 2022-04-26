@@ -95,9 +95,6 @@ def loss_fn(
     if constant_params['q_updates'] is not None:
         q_estimations = q_fn({'params': params['qf_params']}, observations, actions)
 
-        rand_actions = jax.random.uniform(prngkey, shape=(len(observations), 6))
-        rand_q_estimations = q_fn({'params': params['qf_params']}, observations, rand_actions)
-
         if constant_params['q_targets']=='mc':
             target_q = returns
         elif constant_params['q_targets']=='bootstrap':
@@ -118,7 +115,7 @@ def loss_fn(
             )
         q_loss = ((q_estimations - jax.lax.stop_gradient(target_q))**2).mean()
 
-        rand_actions = jax.random.uniform(prngkey, shape=(len(observations), 6))
+        rand_actions = jax.random.uniform(prngkey, shape=(len(observations), actions.shape[-1]))
         rand_q_estimations = q_fn({'params': params['qf_params']}, observations, rand_actions)
 
     if constant_params['entropy'] =='estimation':
