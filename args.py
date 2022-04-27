@@ -59,6 +59,7 @@ def parse_args():
     parser.add_argument('--entropy', type=str, default='estimation')
 
     parser.add_argument('--q-targets', type=str, default='mc')
+    parser.add_argument('--entropy-coef', type=float, default=0)
 
     args = parser.parse_args()
     return args
@@ -71,7 +72,7 @@ args = dict(
         lr=2e-3,
         linear_decay=True,
         value_loss_coef=.4,
-        entropy_coef=0.,
+        # entropy_coef=0.,
         eval_every=20,
         wb_flag=True, # log to wandb or not
         hidden_sizes=(64, 64,),
@@ -168,7 +169,7 @@ def update(args, cmd_args):
 
     args['train_constants'] = dict(
         value_loss_coef=args['value_loss_coef'], 
-        entropy_coef=args['entropy_coef'], 
+        entropy_coef=cmd_args.entropy_coef, 
         normalize_advantages=args['normalize_advantages'], 
         q_updates=args['q_updates'],
         q_loss_coef=cmd_args.q_loss_coef,
