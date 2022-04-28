@@ -9,3 +9,5 @@ trash.txt
 trained_models/
 test.py
 tests/*
+ROMS/
+tests/

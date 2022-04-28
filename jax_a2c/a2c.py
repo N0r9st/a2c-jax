@@ -139,7 +139,8 @@ def loss_fn(
             constant_params['alpha']*dist_entropy)
         value_loss = 0
 
-    loss = constant_params['value_loss_coef']*value_loss + policy_loss - constant_params['entropy_coef']*dist_entropy + q_loss
+    loss = constant_params['value_loss_coef']*value_loss + policy_loss - \
+        constant_params['entropy_coef']*dist_entropy + q_loss
     loss_dict.update(
         value_loss=value_loss, 
         policy_loss=policy_loss, 
