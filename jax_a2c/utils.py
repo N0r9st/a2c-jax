@@ -37,13 +37,13 @@ def create_train_state(
     train_steps: int = 0) -> QTrainState:
 
     dummy_input = envs.reset()
-    dummy_action = np.stack([envs.action_space.sample() for _ in range(envs.num_envs)])
+    # dummy_action = np.stack([envs.action_space.sample() for _ in range(envs.num_envs)])
 
     policy_variables = policy_model.init(prngkey, dummy_input)
     policy_params = policy_variables['params']
 
     prngkey, _ = jax.random.split(prngkey)
-    qf_variables = qf_model.init(prngkey, dummy_input, dummy_action)
+    qf_variables = qf_model.init(prngkey, dummy_input)
     qf_params = qf_variables['params']
 
     if decaying_lr:
@@ -260,7 +260,7 @@ def get_mc_returns(rewards, dones, last_values, gamma):
 def concat_trajectories(traj_list):
     return [jnp.concatenate(x, axis=0) for x in zip(*traj_list)]
 
-@functools.partial(jax.jit)
+# @functools.partial(jax.jit)
 def stack_experiences(exp_list):
     num_steps = exp_list[0].observations.shape[0]
     last_vals = exp_list[-1][3][-1]
@@ -289,7 +289,7 @@ def stack_experiences(exp_list):
     )
 
 
-@jax.jit
+# @jax.jit
 def flatten_experience(experience: Experience): 
     num_steps, num_envs = experience.observations.shape[:2]
     return Experience(
@@ -298,9 +298,9 @@ def flatten_experience(experience: Experience):
         rewards = experience.rewards[:num_steps].reshape((num_envs*num_steps,) + experience.rewards.shape[2:]),
         values = experience.values[:num_steps].reshape((num_envs*num_steps,) + experience.values.shape[2:]),
         dones = experience.dones[:num_steps].reshape((num_envs*num_steps,) + experience.dones.shape[2:]),
-        states = flatten_list(experience.states[:num_steps],
+        states = flatten_list(experience.states[:num_steps],),
         next_observations=experience.next_observations.reshape((num_envs*num_steps,) + experience.next_observations.shape[2:])
-            )
+            
     )
 
 def select_random_states(prngkey, n, experience, type, **kwargs):

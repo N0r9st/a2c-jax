@@ -104,12 +104,14 @@ def _flatten_obs(obs: List[np.array]) -> np.array:
 
 
 def create_env(name: str = 'HalfCheetah-v3', env_state: Optional[MjSimState] = None, seed=None):
-    env = MjTlSavingWrapper(gym.make(name))
+    # env = MjTlSavingWrapper(gym.make(name))
+    # env.reset()
+    # if env_state:
+    #     env.set_state(env_state)
+    # if seed is not None:
+    #     env.seed(seed)
+    env = AtariWrapper(gym.make(name))
     env.reset()
-    if env_state:
-        env.set_state(env_state)
-    if seed is not None:
-        env.seed(seed)
     return env
 
 def make_env_fn(name: str = 'HalfCheetah-v3', env_state: Optional[MjSimState] = None, seed=None):
@@ -183,3 +185,51 @@ def run_workers(worker, k_envs_fn, num_workers, spaces, ctx, split_between_devic
         processes.append(process)
         work_remote.close()
     return remotes
+
+@functools.partial(jax.jit, static_argnames=('shape',))
+def process_image(img, shape):
+    """ (210, 160, 3) -> (84, 84, 1) -> 
+    """
+    return jax.image.resize(img, shape=shape + (1,), method='bilinear')[:, :, 0]/255
+
+class AtariWrapper(gym.Wrapper):
+    def __init__(
+        self, 
+        env,
+        ):
+        super().__init__(env)
+        self.shape = (84, 84, 4)
+        self.repeats = 4
+        self.random_noops_range = 30
+        self.preprocess_fn = jax.vmap(
+            process_image, 
+            in_axes=(0, None), out_axes=-1)
+        self.observation_space = gym.spaces.Box(low=0, high=1, shape=(28224,))
+
+    def step(self, action):
+        observations = np.zeros((self.repeats,) + self.env.observation_space.shape)
+        result_done = False
+        rewards = np.zeros(4)
+        for i in range(self.repeats):
+            observation, reward, done, info = self.env.step(action)
+            observations[i] = observation
+            rewards[i] = reward
+            if done:
+                for j in range(i+1, self.repeats):
+                    observations[j] = observation
+                result_done = True
+                break
+        return (self.preprocess_fn(observations, self.shape[:2]).reshape(-1), rewards.sum(), result_done, info)
+        
+    def reset(self,):
+        observation = self.env.reset()
+        for _ in range(self.random_noops_range):
+            action = self.env.action_space.sample()
+            observation, reward, done, info = self.env.step(action)
+        return self.preprocess_fn(np.stack([observation for _ in range(self.repeats)]), self.shape[:2]).reshape(-1)
+    
+    def get_state(self,):
+        return self.env.ale.cloneState()
+    
+    def set_state(self, data):
+        self.env.ale.restoreState(data)

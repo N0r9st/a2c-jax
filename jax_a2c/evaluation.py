@@ -20,8 +20,8 @@ def eval(
     cumdones = jnp.zeros(shape=(observation.shape[0],))
     dones = [np.array(observation.shape[0]*[False])]
     for _ in range(1000):
-        values, (action_means, action_log_stds) = apply_fn({'params': params}, observation)
-        observation, reward, done, info = env.step(action_means)
+        values, logits = apply_fn({'params': params}, observation)
+        observation, reward, done, info = env.step(logits.argmax(-1))
         cumdones += done
         total_reward.append(env.old_reward) 
         dones.append(done)

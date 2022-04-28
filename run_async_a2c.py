@@ -1,5 +1,6 @@
 import functools
 import os
+
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 from copy import deepcopy
 import time
@@ -14,7 +15,7 @@ from jax_a2c.a2c import step
 from jax_a2c.distributions import sample_action_from_normal as sample_action
 from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
 from jax_a2c.evaluation import eval, q_eval
-from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy
+from jax_a2c.policy import Policy, QFunction
 from jax_a2c.utils import (Experience, collect_experience, create_train_state, select_random_states,
                            process_experience, concat_trajectories, stack_experiences)
 from jax_a2c.km_mc_traj import km_mc_rollouts
@@ -22,13 +23,16 @@ from jax_a2c.saving import save_state, load_state
 from flax.core import freeze
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
 
-POLICY_CLASSES = {
-    'DiagGaussianPolicy': DiagGaussianPolicy, 
-    'DiagGaussianStateDependentPolicy': DiagGaussianStateDependentPolicy,
-}
+from args import args
+import gym
+
+N_ACTIONS = gym.make(args['env_name']).action_space.n
+
 def _policy_fn(prngkey, observation, params, apply_fn, determenistic=False):
-    values, (means, log_stds) = apply_fn({'params': params}, observation)
-    sampled_actions  = means if determenistic else sample_action(prngkey, means, log_stds)
+    # values, (means, log_stds) = apply_fn({'params': params}, observation)
+    # sampled_actions  = means if determenistic else sample_action(prngkey, means, log_stds)
+    values, action_logits = apply_fn({'params': params}, observation)
+    sampled_actions = jax.random.categorical(prngkey, action_logits)
     return values, sampled_actions
 
 def _worker(remote, k_remotes, parent_remote, spaces, device) -> None:
@@ -107,12 +111,9 @@ def main(args: dict):
                 split_between_devices=args['split_between_devices'])
     # ------------------------------------------
 
-    policy_model = POLICY_CLASSES[args['policy_type']](
-        hidden_sizes=args['hidden_sizes'], 
-        action_dim=envs.action_space.shape[0],
-        init_log_std=args['init_log_std'])
+    policy_model = Policy(action_dim=N_ACTIONS,)
 
-    qf_model = QFunction(hidden_sizes=args['hidden_sizes'], action_dim=envs.action_space.shape[0],)
+    qf_model = QFunction(action_dim=N_ACTIONS,)
 
     prngkey = jax.random.PRNGKey(args['seed'])
 
@@ -193,8 +194,8 @@ def main(args: dict):
                     policy_fn=policy_fn,)
                 exp_list.append(experience)
 
-
-                base_traj_part = process_experience(experience, gamma=args['gamma'], lambda_=args['lambda_'])
+                
+                base_traj_part = process_experience(experience._replace(states=None), gamma=args['gamma'], lambda_=args['lambda_'])
                 add_args = {}
                 if args['sampling_type']=='adv':
                     advs = base_traj_part[3].reshape((args['num_steps']//args['num_workers'], args['num_envs']))
@@ -249,7 +250,7 @@ def main(args: dict):
                 )
 
         prngkey, _ = jax.random.split(prngkey)
-
+        return 
         state, (loss, loss_dict) = step(
             state, 
             # trajectories, 
@@ -281,8 +282,6 @@ def main(args: dict):
             wandb.log({'training/' + k: v for k, v in loss_dict.items()}, step=current_update)
 
 if __name__=='__main__':
-
-    from args import args
 
     ctx = mp.get_context("forkserver")
 
