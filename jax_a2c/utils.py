@@ -298,10 +298,9 @@ def flatten_experience(experience: Experience):
         rewards = experience.rewards[:num_steps].reshape((num_envs*num_steps,) + experience.rewards.shape[2:]),
         values = experience.values[:num_steps].reshape((num_envs*num_steps,) + experience.values.shape[2:]),
         dones = experience.dones[:num_steps].reshape((num_envs*num_steps,) + experience.dones.shape[2:]),
-        states = flatten_list(experience.states[:num_steps],
+        states = flatten_list(experience.states[:num_steps]),
         next_observations=experience.next_observations.reshape((num_envs*num_steps,) + experience.next_observations.shape[2:])
             )
-    )
 
 def select_random_states(prngkey, n, experience, type, **kwargs):
     flattened = flatten_experience(experience)
