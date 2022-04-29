@@ -245,12 +245,12 @@ def main(args: dict):
                 num_steps=args['num_steps'], 
                 policy_fn=policy_fn,)
             data_tuple = (
-                experience, 
+                experience._replace(states=None), 
                 None,
                 )
 
         prngkey, _ = jax.random.split(prngkey)
-        return 
+        # return
         state, (loss, loss_dict) = step(
             state, 
             # trajectories, 

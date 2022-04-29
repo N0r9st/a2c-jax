@@ -1,6 +1,7 @@
 import functools
 import jax 
 import jax.numpy as jnp
+from jax_a2c.utils import select_logprob
 
 @functools.partial(jax.jit, static_argnums=(1,))
 def evaluate_actions_norm_with_repeats(params, apply_fn, observations, actions):
@@ -24,11 +25,15 @@ def sample_action_from_normal(prngkey, normal_means, log_normal_stds):
     return normal_samples
 
 def evaluate_actions_norm(params, apply_fn, observations, actions, prngkey):
-    values, (means, log_stds) = apply_fn({'params': params}, observations)
-    stds = jnp.exp(log_stds)
-    pre_tanh_logprobs = -(actions-means)**2/(2*stds**2) - jnp.log(2*jnp.pi)/2 - log_stds
-    action_logprobs = (pre_tanh_logprobs).sum(axis=-1)
-    dist_entropy = (0.5 + 0.5 * jnp.log(2 * jnp.pi) + log_stds).sum(-1).mean()
-    action_samples = sample_action_from_normal(prngkey, means, log_stds)
-    return action_logprobs, values[..., 0], dist_entropy, log_stds, action_samples  
+    values, logprob_per_action = apply_fn({'params': params}, observations)
+    # stds = jnp.exp(log_stds)
+    # pre_tanh_logprobs = -(actions-means)**2/(2*stds**2) - jnp.log(2*jnp.pi)/2 - log_stds
+    # action_logprobs = (pre_tanh_logprobs).sum(axis=-1)
+    action_logprobs = select_logprob(logprob_per_action, actions)
+    action_probs = jnp.exp(action_logprobs)
+    # dist_entropy = # (0.5 + 0.5 * jnp.log(2 * jnp.pi) + log_stds).sum(-1).mean()
+    dist_entropy = - (action_probs * action_logprobs).sum(-1)
+    # action_samples = sample_action_from_categorical(prngkey, means, log_stds)
+    action_samples = None
+    return action_logprobs, values[..., 0], dist_entropy, action_logprobs, action_samples  
     

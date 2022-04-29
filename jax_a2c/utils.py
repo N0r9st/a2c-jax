@@ -177,14 +177,15 @@ def process_experience_with_entropy(
     # ------- LOGPROBS ----------
     actor_steps, num_agents = observations.shape[:2]
 
-    _, (means, log_stds) = apply_fn(
+    _, logprobs_per_action = apply_fn(
         {'params': params}, 
         observations.reshape((actor_steps* num_agents,) + observations.shape[2:]))
     if entropy == 'estimation':
-        logprobs = calculate_action_logprobs(actions.reshape((actor_steps * num_agents, -1)), means, log_stds)
+        # logprobs = calculate_action_logprobs(actions.reshape((actor_steps * num_agents, -1)), means, log_stds)
+        logprobs = select_logprob(logprobs_per_action, actions.reshape((actor_steps * num_agents, -1)))
         entropy = - logprobs.reshape((actor_steps, num_agents))
     elif entropy == 'real':
-        entropy = (0.5 + 0.5 * jnp.log(2 * jnp.pi) + log_stds).sum(-1).reshape((actor_steps, num_agents))
+        raise NotImplementedError
     entropy_rewards = rewards + alpha * entropy
     #------------------------------
 
@@ -345,3 +346,8 @@ def process_mc_rollouts(observations, actions, returns, M):
 vmap_process_mc_rollouts = jax.vmap(
     process_mc_rollouts, in_axes=(0, 0, 0, None), out_axes=0,
     )
+
+@jax.jit
+@functools.partial(jax.vmap, in_axes=(0,0), out_axes=0)
+def select_logprob(logprobs, action):
+    return logprobs[action]
