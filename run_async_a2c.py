@@ -14,7 +14,7 @@ import multiprocessing as mp
 from jax_a2c.a2c import step
 from jax_a2c.distributions import sample_action_from_normal as sample_action
 from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
-from jax_a2c.evaluation import eval, q_eval
+from jax_a2c.evaluation import eval
 from jax_a2c.policy import Policy, QFunction
 from jax_a2c.utils import (Experience, collect_experience, create_train_state, select_random_states,
                            process_experience, concat_trajectories, stack_experiences)
@@ -67,7 +67,6 @@ def main(args: dict):
     epoch_times = []
     epoch_time = 0
     eval_return = 0
-    q_eval_return = 0
 
     envs = make_vec_env(
         name=args['env_name'], 
@@ -171,12 +170,6 @@ def main(args: dict):
             eval_envs.obs_rms = deepcopy(envs.obs_rms)
             _, eval_return = eval(state.apply_fn, state.params['policy_params'], eval_envs)
             print(f'Updates {current_update}/{total_updates}. Eval return: {eval_return}. Epoch_time: {epoch_time}.')
-
-            if args['eval_with_q']:
-                eval_envs.obs_rms = deepcopy(envs.obs_rms)
-                _, q_eval_return = q_eval(state.apply_fn, state.params['policy_params'], 
-                                        state.q_fn, state.params['qf_params'], eval_envs)
-                print(f'Q-eval return: {q_eval_return}')
 
         #------------------------------------------------
         #              WORKER ROLLOUTS
