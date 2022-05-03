@@ -1,16 +1,16 @@
 import functools
 import multiprocessing as mp
 import itertools
-from typing import Iterable, List, Optional, Tuple
+from typing import Any, Iterable, List, Optional, Tuple
 import collections
 
 import gym
 from matplotlib.style import available
 import numpy as np
-from mujoco_py import MjSimState
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
 import jax
 
+MjSimState = Any
 
 def _worker(remote, parent_remote, env_fn) -> None:
 
