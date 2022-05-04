@@ -22,7 +22,7 @@ def _worker(remote, parent_remote, env_fn) -> None:
             if cmd == "step":
                 observation, reward, done, info = env.step(data)
                 if done:
-                    info["terminal_observation"] = observation
+                    # info["terminal_observation"] = observation
                     observation = env.reset()
                 remote.send((observation, reward, done, info))
             elif cmd == "reset":
@@ -99,7 +99,8 @@ class SubprocVecEnv:
         return None
 
 def _flatten_obs(obs: List[np.array]) -> np.array:
-    stacked = np.stack(obs)
+    stacked = np.stack(obs) 
+    stacked = process_observations(stacked, (84, 84,))
     return stacked
 
 
@@ -186,11 +187,19 @@ def run_workers(worker, k_envs_fn, num_workers, spaces, ctx, split_between_devic
         work_remote.close()
     return remotes
 
-@functools.partial(jax.jit, static_argnames=('shape',))
-def process_image(img, shape):
-    """ (210, 160, 3) -> (84, 84, 1) -> 
+# @functools.partial(jax.jit, static_argnames=('shape',))
+@functools.partial(jax.vmap, in_axes=(0, None), out_axes=-1)
+def process_observation_images(img, shape):
+    """ (4, 210, 160, 3) -> (84, 84, 4) -> 
     """
-    return jax.image.resize(img, shape=shape + (1,), method='bilinear')[:, :, 0]/255
+    return (jax.image.resize(img, shape=shape + (1,), method='bilinear')[:, :, 0]/255)
+
+@functools.partial(jax.jit, static_argnums=(1,))
+@functools.partial(jax.vmap, in_axes=(0, None), out_axes=0)
+def process_observations(observation, shape):
+    observation = process_observation_images(observation, shape).reshape(-1)
+    return observation
+
 
 class AtariWrapper(gym.Wrapper):
     def __init__(
@@ -201,9 +210,9 @@ class AtariWrapper(gym.Wrapper):
         self.shape = (84, 84, 4)
         self.repeats = 4
         self.random_noops_range = 30
-        self.preprocess_fn = jax.vmap(
-            process_image, 
-            in_axes=(0, None), out_axes=-1)
+        # self.preprocess_fn = jax.vmap(
+        #     process_image, 
+        #     in_axes=(0, None), out_axes=-1)
         self.observation_space = gym.spaces.Box(low=0, high=1, shape=(28224,))
 
     def step(self, action):
@@ -219,14 +228,15 @@ class AtariWrapper(gym.Wrapper):
                     observations[j] = observation
                 result_done = True
                 break
-        return (self.preprocess_fn(observations, self.shape[:2]).reshape(-1), rewards.sum(), result_done, info)
-        
+       # return (self.preprocess_fn(observations, self.shape[:2]).reshape(-1), rewards.sum(), result_done, info)
+        return observations, rewards.sum(), result_done, {}
+    
     def reset(self,):
         observation = self.env.reset()
         for _ in range(self.random_noops_range):
             action = self.env.action_space.sample()
             observation, reward, done, info = self.env.step(action)
-        return self.preprocess_fn(np.stack([observation for _ in range(self.repeats)]), self.shape[:2]).reshape(-1)
+        return np.stack([observation for _ in range(self.repeats)])
     
     def get_state(self,):
         return self.env.ale.cloneState()

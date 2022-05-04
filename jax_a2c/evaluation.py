@@ -19,7 +19,7 @@ def eval(
     total_reward = []
     cumdones = jnp.zeros(shape=(observation.shape[0],))
     dones = [np.array(observation.shape[0]*[False])]
-    for _ in range(1000):
+    for _ in range(10000):
         values, logits = apply_fn({'params': params}, observation)
         observation, reward, done, info = env.step(logits.argmax(-1))
         cumdones += done
