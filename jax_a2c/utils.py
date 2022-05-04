@@ -182,7 +182,7 @@ def process_experience_with_entropy(
         observations.reshape((actor_steps* num_agents,) + observations.shape[2:]))
     if entropy == 'estimation':
         # logprobs = calculate_action_logprobs(actions.reshape((actor_steps * num_agents, -1)), means, log_stds)
-        logprobs = select_logprob(logprobs_per_action, actions.reshape((actor_steps * num_agents, -1)))
+        logprobs = select_logprob(logprobs_per_action, actions.reshape((actor_steps * num_agents,)))
         entropy = - logprobs.reshape((actor_steps, num_agents))
     elif entropy == 'real':
         raise NotImplementedError
@@ -227,13 +227,16 @@ def process_rewards_with_entropy(
 
     masks = jnp.cumprod((1-dones)*gamma, axis=0)/gamma
     len_rollout, n_rollout, obs_shape = observations.shape
-    _, (means, log_stds) = apply_fn({'params': params}, observations.reshape((len_rollout * n_rollout, obs_shape)))
+    # _, (means, log_stds) = apply_fn({'params': params}, observations.reshape((len_rollout * n_rollout, obs_shape)))
+    _, logprobs_per_action = apply_fn({'params': params}, observations.reshape((len_rollout * n_rollout, obs_shape)))
     if entropy == 'estimation':
-        actions = actions.reshape((len_rollout * n_rollout, -1))
-        logprobs = calculate_action_logprobs(actions, means, log_stds)
+        # actions = actions.reshape((len_rollout * n_rollout, -1))
+        # logprobs = calculate_action_logprobs(actions, means, log_stds)
+        # entropy = - logprobs.reshape((len_rollout, n_rollout))
+        logprobs = select_logprob(logprobs_per_action, actions.reshape((len_rollout * n_rollout,)))
         entropy = - logprobs.reshape((len_rollout, n_rollout))
     elif entropy == 'real':
-        entropy = (0.5 + 0.5 * jnp.log(2 * jnp.pi) + log_stds).sum(-1).reshape((len_rollout, n_rollout,))
+        raise NotImplementedError
     rewards = rewards + alpha * entropy
     k_returns = (rewards * masks[:-1]).sum(axis=0) + bootstrapped_values * masks[-1]
     return k_returns
@@ -316,7 +319,7 @@ def select_random_states(prngkey, n, experience, type, **kwargs):
 # @functools.partial(jax.jit, static_argnames=('replace', 'n'))
 def select_experience_random(prngkey, n, experience, replace=False, p=None): 
     num_states = len(experience[0])
-    choices = jnp.array(jax.random.choice(prngkey, num_states, shape=(n,), replace=replace, p=p))
+    choices = jnp.array(jax.random.choice(prngkey, num_states, shape=(n,), replace=replace, p=p)).tolist()
     return Experience(observations=experience.observations[choices],
                     actions=experience.actions[choices],
                     rewards=experience.rewards[choices],
@@ -350,4 +353,4 @@ vmap_process_mc_rollouts = jax.vmap(
 @jax.jit
 @functools.partial(jax.vmap, in_axes=(0,0), out_axes=0)
 def select_logprob(logprobs, action):
-    return logprobs[action]
+    return logprobs[(action).astype(int)]

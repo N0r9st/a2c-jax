@@ -224,7 +224,7 @@ def main(args: dict):
             #----------------------------------------------------------------
             original_experience = stack_experiences(exp_list)
             data_tuple = (
-                original_experience, 
+                original_experience._replace(states=None), 
                 jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
                     *[remote.recv() for remote in remotes]
                     )
