@@ -65,7 +65,7 @@ def loss_fn(
 
     returns = jax.lax.stop_gradient(returns_loggrad)
 
-    action_logprobs, values, dist_entropy, log_stds, action_samples = evaluate_actions(
+    action_logprobs, sampled_action_logprobs, values, dist_entropy, log_stds, action_samples = evaluate_actions(
         params['policy_params'], 
         apply_fn, observations, actions, prngkey)
     #--------------------------------
@@ -129,7 +129,7 @@ def loss_fn(
     elif constant_params['q_updates'] == 'log':
         sampled_estimations = q_fn({'params': params['qf_params']}, observations, action_samples)
         estimated_advantages = sampled_estimations - values
-        q_loss += - (jax.lax.stop_gradient(estimated_advantages) * action_logprobs).mean()
+        q_loss += - (jax.lax.stop_gradient(estimated_advantages) * sampled_action_logprobs).mean()
 
     elif constant_params['q_updates'] == 'rep_only':
         policy_loss = - constant_params['q_loss_coef'] * (q_fn(

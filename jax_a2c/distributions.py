@@ -29,6 +29,10 @@ def evaluate_actions_norm(params, apply_fn, observations, actions, prngkey):
     pre_tanh_logprobs = -(actions-means)**2/(2*stds**2) - jnp.log(2*jnp.pi)/2 - log_stds
     action_logprobs = (pre_tanh_logprobs).sum(axis=-1)
     dist_entropy = (0.5 + 0.5 * jnp.log(2 * jnp.pi) + log_stds).sum(-1).mean()
+    # --------
     action_samples = sample_action_from_normal(prngkey, means, log_stds)
-    return action_logprobs, values[..., 0], dist_entropy, log_stds, action_samples  
+    pre_tanh_logprobs = -(action_samples-means)**2/(2*stds**2) - jnp.log(2*jnp.pi)/2 - log_stds
+    sampled_action_logprobs = (pre_tanh_logprobs).sum(axis=-1)
+    # --------
+    return action_logprobs, sampled_action_logprobs, values[..., 0], dist_entropy, log_stds, action_samples  
     
