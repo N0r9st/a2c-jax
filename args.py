@@ -1,6 +1,6 @@
 import argparse
 possible_types = ['sample-KM-rollouts-fast', 'standart']
-possible_q_updates = [None, 'rep', 'log', 'just_q', 'rep_only', 'add_v_upd', 'none']
+possible_q_updates = [None, 'rep', 'log', 'none']
 possible_policy_types = ['DiagGaussianPolicy', 'DiagGaussianStateDependentPolicy']
 possible_sampling_types = ['uniform', 'adv',]
 def parse_args():

@@ -177,14 +177,18 @@ def process_experience_with_entropy(
     # ------- LOGPROBS ----------
     actor_steps, num_agents = observations.shape[:2]
 
-    _, (means, log_stds) = apply_fn(
-        {'params': params}, 
-        observations.reshape((actor_steps* num_agents,) + observations.shape[2:]))
-    if entropy == 'estimation':
-        logprobs = calculate_action_logprobs(actions.reshape((actor_steps * num_agents, -1)), means, log_stds)
-        entropy = - logprobs.reshape((actor_steps, num_agents))
-    elif entropy == 'real':
-        entropy = (0.5 + 0.5 * jnp.log(2 * jnp.pi) + log_stds).sum(-1).reshape((actor_steps, num_agents))
+    
+    if alpha>0:
+        _, (means, log_stds) = apply_fn(
+            {'params': params}, 
+            observations.reshape((actor_steps* num_agents,) + observations.shape[2:]))
+        if entropy == 'estimation':
+            logprobs = calculate_action_logprobs(actions.reshape((actor_steps * num_agents, -1)), means, log_stds)
+            entropy = - logprobs.reshape((actor_steps, num_agents))
+        elif entropy == 'real':
+            entropy = (0.5 + 0.5 * jnp.log(2 * jnp.pi) + log_stds).sum(-1).reshape((actor_steps, num_agents))
+    else:
+        entropy = 0
     entropy_rewards = rewards + alpha * entropy
     #------------------------------
 
@@ -192,9 +196,6 @@ def process_experience_with_entropy(
     advantages = gae_advantages(entropy_rewards, dones, values, gamma, lambda_)
     returns = advantages + values[:-1]
     trajectories = (observations, actions, returns, advantages, next_observations, dones[1:], rewards)
-    
-    
-
     trajectory_len = num_agents * actor_steps
     trajectories = tuple(map(
         lambda x: jnp.reshape(x, (trajectory_len,) + x.shape[2:]), 
@@ -225,14 +226,19 @@ def process_rewards_with_entropy(
     """
 
     masks = jnp.cumprod((1-dones)*gamma, axis=0)/gamma
-    len_rollout, n_rollout, obs_shape = observations.shape
-    _, (means, log_stds) = apply_fn({'params': params}, observations.reshape((len_rollout * n_rollout, obs_shape)))
-    if entropy == 'estimation':
-        actions = actions.reshape((len_rollout * n_rollout, -1))
-        logprobs = calculate_action_logprobs(actions, means, log_stds)
-        entropy = - logprobs.reshape((len_rollout, n_rollout))
-    elif entropy == 'real':
-        entropy = (0.5 + 0.5 * jnp.log(2 * jnp.pi) + log_stds).sum(-1).reshape((len_rollout, n_rollout,))
+    
+    if alpha>0:
+        len_rollout, n_rollout, obs_shape = observations.shap
+        _, (means, log_stds) = apply_fn({'params': params}, observations.reshape((len_rollout * n_rollout, obs_shape)))
+        if entropy == 'estimation':
+            actions = actions.reshape((len_rollout * n_rollout, -1))
+            logprobs = calculate_action_logprobs(actions, means, log_stds)
+            entropy = - logprobs.reshape((len_rollout, n_rollout))
+        elif entropy == 'real':
+            entropy = (0.5 + 0.5 * jnp.log(2 * jnp.pi) + log_stds).sum(-1).reshape((len_rollout, n_rollout,))
+    else:
+        entropy = 0
+
     rewards = rewards + alpha * entropy
     k_returns = (rewards * masks[:-1]).sum(axis=0) + bootstrapped_values * masks[-1]
     return k_returns
@@ -344,3 +350,45 @@ def process_mc_rollouts(observations, actions, returns, M):
 vmap_process_mc_rollouts = jax.vmap(
     process_mc_rollouts, in_axes=(0, 0, 0, None), out_axes=0,
     )
+
+@functools.partial(jax.jit, constant_argnames=('constant_params','apply_fn'))
+def process_rollout_output(apply_fn, params, data_tuple, constant_params):
+    orig_exp, mc_rollouts_exp = data_tuple
+    (observations, 
+    actions, returns_loggrad, _, 
+    next_observations, next_dones, rewards), entropy = process_experience_with_entropy(
+        orig_exp, 
+        apply_fn,
+        params['policy_params'],
+        lambda_=constant_params['lambda_'], 
+        gamma=constant_params['gamma'],
+        alpha=constant_params['alpha'],
+        entropy=constant_params['entropy'],
+        )
+    if constant_params['type'] != 'standart':
+        mc_rollouts_returns = vmap_process_rewards_with_entropy(
+            apply_fn,
+            params['policy_params'],
+            mc_rollouts_exp['observations'],
+            mc_rollouts_exp['actions'],
+            mc_rollouts_exp['dones'],
+            mc_rollouts_exp['rewards'],
+            mc_rollouts_exp['bootstrapped'],
+            constant_params['alpha'],
+            constant_params['gamma'],
+            constant_params['entropy'],
+        )
+
+        mc_observations, mc_actions, mc_returns = vmap_process_mc_rollouts(
+            mc_rollouts_exp['observations'],
+            mc_rollouts_exp['actions'],
+            mc_rollouts_returns,
+            constant_params['M']
+        )
+        mc_observations, mc_actions, mc_returns = tuple(map(
+            lambda x: x.reshape((x.shape[0]*x.shape[1],) + x.shape[2:]), (mc_observations, mc_actions, mc_returns)
+        ))
+
+        observations = jnp.concatenate((observations, mc_observations), axis=0)
+        actions = jnp.concatenate((actions, mc_actions), axis=0)
+        returns_loggrad = jnp.concatenate((returns_loggrad, mc_returns), axis=0)

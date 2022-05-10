@@ -16,7 +16,7 @@ from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
 from jax_a2c.evaluation import eval, q_eval
 from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy
 from jax_a2c.utils import (Experience, collect_experience, create_train_state, select_random_states,
-                           process_experience, concat_trajectories, stack_experiences)
+                           process_experience, concat_trajectories, stack_experiences, process_rollout_output)
 from jax_a2c.km_mc_traj import km_mc_rollouts
 from jax_a2c.saving import save_state, load_state
 from flax.core import freeze
@@ -247,13 +247,14 @@ def main(args: dict):
                 experience, 
                 None,
                 )
-
+        
+        oar = process_rollout_output(state.apply_fn, state.params, data_tuple, args['train_constants'])
         prngkey, _ = jax.random.split(prngkey)
 
         state, (loss, loss_dict) = step(
             state, 
             # trajectories, 
-            data_tuple, # (Experience(original trajectory), List[dicts](kml trajs))
+            oar, # (Experience(original trajectory), List[dicts](kml trajs))
             prngkey,
             constant_params=args['train_constants'],
             )
