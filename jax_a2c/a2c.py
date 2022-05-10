@@ -129,7 +129,8 @@ def loss_fn(
     elif constant_params['q_updates'] == 'log':
         sampled_estimations = q_fn({'params': params['qf_params']}, observations, action_samples)
         estimated_advantages = sampled_estimations - values
-        q_loss += - (jax.lax.stop_gradient(estimated_advantages) * sampled_action_logprobs).mean()
+        q_loss += - constant_params['q_loss_coef'] * \
+            (jax.lax.stop_gradient(estimated_advantages) * sampled_action_logprobs).mean()
 
     elif constant_params['q_updates'] == 'rep_only':
         policy_loss = - constant_params['q_loss_coef'] * (q_fn(
