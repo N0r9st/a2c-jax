@@ -29,6 +29,7 @@ def parse_args():
     parser.add_argument('--num-envs', type=int, default=4)
     parser.add_argument('--value-loss-coef', type=float, default=0.4)
     parser.add_argument('--q-loss-coef', type=float, default=0.4)
+    parser.add_argument('--q-loss-multiplier', type=float, default=1.)
     parser.add_argument('--gamma', type=float, default=0.99)
 
     parser.add_argument('--log-every', type=int, default=20)
@@ -60,6 +61,10 @@ def parse_args():
 
     parser.add_argument('--q-targets', type=str, default='mc')
     parser.add_argument('--entropy-coef', type=float, default=0)
+    parser.add_argument('--qf-update-batch-size', type=int, default=-1)
+    parser.add_argument('--qf-update-epochs', type=int, default=1)
+    parser.add_argument('--qf-test-ratio', type=float, default=.1)
+
 
     args = parser.parse_args()
     return args
@@ -181,6 +186,10 @@ def update(args, cmd_args):
         gradstop=cmd_args.gradstop,
         entropy=cmd_args.entropy,
         q_targets=cmd_args.q_targets,
+        q_loss_multiplier=cmd_args.q_loss_multiplier,
+        qf_update_batch_size=cmd_args.qf_update_batch_size,
+        qf_update_epochs=cmd_args.qf_update_epochs,
+        qf_test_ratio=cmd_args.qf_test_ratio,
     )
 
     args['sampling_type'] = cmd_args.sampling_type

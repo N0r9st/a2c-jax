@@ -10,7 +10,8 @@ import wandb
 import itertools
 import multiprocessing as mp
 
-from jax_a2c.a2c import step
+from jax_a2c.a2c import p_step
+from jax_a2c.q_updates import q_step, train_test_split
 from jax_a2c.distributions import sample_action_from_normal as sample_action
 from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
 from jax_a2c.evaluation import eval, q_eval
@@ -194,9 +195,10 @@ def main(args: dict):
                 exp_list.append(experience)
 
 
-                base_traj_part = process_experience(experience, gamma=args['gamma'], lambda_=args['lambda_'])
+                
                 add_args = {}
                 if args['sampling_type']=='adv':
+                    base_traj_part = process_experience(experience, gamma=args['gamma'], lambda_=args['lambda_'])
                     advs = base_traj_part[3].reshape((args['num_steps']//args['num_workers'], args['num_envs']))
                     add_args['advantages'] = advs
                     add_args['sampling_prob_temp'] = args['sampling_prob_temp']
@@ -251,14 +253,34 @@ def main(args: dict):
         oar = process_rollout_output(state.apply_fn, state.params, data_tuple, args['train_constants'])
         prngkey, _ = jax.random.split(prngkey)
 
-        state, (loss, loss_dict) = step(
+        args['train_constants'] = args['train_constants'].copy({
+            'num_train_samples':len(oar['observations']),
+            'qf_update_batch_size':args['train_constants']['qf_update_batch_size'] if \
+            args['train_constants']['qf_update_batch_size'] > 0 else len(oar['observations']) 
+            })
+
+        train_oar, test_oar = train_test_split(
+            oar, 
+            prngkey, 
+            args['train_constants']['qf_test_ratio'], 
+            args['train_constants']['num_train_samples'])
+
+        state, (q_loss, q_loss_dict) = q_step(
+            state, 
+            # trajectories, 
+            (train_oar, test_oar), # (Experience(original trajectory), List[dicts](kml trajs))
+            prngkey,
+            constant_params=args['train_constants'],
+            )
+        prngkey, _ = jax.random.split(prngkey)
+        state, (loss, loss_dict) = p_step(
             state, 
             # trajectories, 
             oar, # (Experience(original trajectory), List[dicts](kml trajs))
             prngkey,
             constant_params=args['train_constants'],
             )
-
+        loss_dict.update(q_loss_dict)
         if args['save'] and (current_update % args['save_every']):
             additional = {}
             additional['obs_rms'] = deepcopy(envs.obs_rms)

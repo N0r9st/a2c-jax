@@ -351,7 +351,7 @@ vmap_process_mc_rollouts = jax.vmap(
     process_mc_rollouts, in_axes=(0, 0, 0, None), out_axes=0,
     )
 
-@functools.partial(jax.jit, constant_argnames=('constant_params','apply_fn'))
+@functools.partial(jax.jit, static_argnames=('constant_params','apply_fn'))
 def process_rollout_output(apply_fn, params, data_tuple, constant_params):
     orig_exp, mc_rollouts_exp = data_tuple
     (observations, 
@@ -392,3 +392,8 @@ def process_rollout_output(apply_fn, params, data_tuple, constant_params):
         observations = jnp.concatenate((observations, mc_observations), axis=0)
         actions = jnp.concatenate((actions, mc_actions), axis=0)
         returns_loggrad = jnp.concatenate((returns_loggrad, mc_returns), axis=0)
+    return dict(
+        observations=observations,
+        actions=actions,
+        returns=returns_loggrad,
+    )

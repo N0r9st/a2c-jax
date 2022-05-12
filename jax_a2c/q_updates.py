@@ -22,7 +22,6 @@ def q_loss_fn(
     constant_params,
     ):
 
-
     observations = oar['observations']
     actions = oar['actions']
     returns = oar['returns']
@@ -30,8 +29,6 @@ def q_loss_fn(
     q_estimations = q_fn({'params': params['qf_params']}, observations, actions)
     q_loss = ((q_estimations - jax.lax.stop_gradient(returns))**2).mean()
 
-    rand_actions = jax.random.uniform(prngkey, shape=(len(observations), actions.shape[-1]))
-    rand_q_estimations = q_fn({'params': params['qf_params']}, observations, rand_actions)
 
     loss = constant_params['q_loss_multiplier'] * q_loss
 
@@ -39,22 +36,86 @@ def q_loss_fn(
     loss_dict.update(
         q_loss=q_loss,
         current_q=q_estimations.mean(),
-        baseline_q=rand_q_estimations.mean(),
-        difference_q =q_estimations.mean() - rand_q_estimations.mean(),
+        # baseline_q=rand_q_estimations.mean(),
+        # difference_q =q_estimations.mean() - rand_q_estimations.mean(),
         )
     return loss, loss_dict
 
 @functools.partial(jax.jit, static_argnums=(3,))
-def q_step(state, data_tuple, prngkey,
+def q_step(state, oar_tuple, prngkey,
     constant_params):
-    
-    (loss, loss_dict), grads = jax.value_and_grad(q_loss_fn, has_aux=True)(
-        state.params, 
-        state.apply_fn, 
-        data_tuple,
-        prngkey,
-        state.q_fn,
-        constant_params,)
-    new_state = state.apply_gradients(grads=grads)
+    # train_oar, test_oar = train_test_split(
+    #     oar, 
+    #     prngkey, 
+    #     constant_params['qf_test_ratio'], 
+    #     constant_params['num_train_samples'])
+    train_oar, test_oar = oar_tuple
+
+    for epoch in range(constant_params['qf_update_epochs']):
+        batches = get_batches(train_oar, constant_params['qf_update_batch_size'], prngkey)
+        for batch in batches:
+            (loss, loss_dict), grads = jax.value_and_grad(q_loss_fn, has_aux=True)(
+                state.params, 
+                state.apply_fn, 
+                batch,
+                prngkey,
+                state.q_fn,
+                constant_params,)
+            new_state = state.apply_gradients(grads=grads)
+
+    loss_dict.update(test_qf(prngkey, train_oar, test_oar, state.q_fn, state.params))
+
     return new_state, (loss, loss_dict)
 
+def get_batches(oar, batch_size, prngkey):
+    oar = {k: jax.random.permutation(prngkey, v, independent=True) for k, v in oar.items()}
+    num_obs = len(oar['observations'])
+    # for i in range(0, num_obs, batch_size):
+    #     print('IIIIIIIII', i, batch_size)
+    #     yield {k: v[i:i+batch_size] for k, v in oar.items()}
+    batches = []
+    for i in range(0, num_obs, batch_size):
+        batches.append({k: v[i:i+batch_size] for k, v in oar.items()})
+    return batches
+
+def test_qf(prngkey, train_oar, test_oar, q_fn, params):
+    train_observations = train_oar['observations']
+    train_actions = train_oar['actions']
+    train_returns = train_oar['returns']
+
+    test_observations = test_oar['observations']
+    test_actions = test_oar['actions']
+    test_returns = test_oar['returns']
+    
+    q_train_estimations = q_fn({'params': params['qf_params']}, train_observations, train_actions)
+    q_train_loss = ((q_train_estimations - train_returns)**2).mean()
+
+    q_test_estimations = q_fn({'params': params['qf_params']}, test_observations, test_actions)
+    q_test_loss = ((q_test_estimations - test_returns)**2).mean()
+
+
+    train_rand_actions = jax.random.uniform(prngkey, shape=(len(train_observations), train_actions.shape[-1]))
+    train_rand_q_estimations = q_fn({'params': params['qf_params']}, train_observations, train_rand_actions)
+    train_q_diff = (q_train_estimations - train_rand_q_estimations).mean()
+    
+
+    test_rand_actions = jax.random.uniform(prngkey, shape=(len(test_observations), test_actions.shape[-1]))
+    test_rand_q_estimations = q_fn({'params': params['qf_params']}, test_observations, test_rand_actions)
+    test_q_diff = (q_test_estimations - test_rand_q_estimations).mean()
+
+    return dict(
+        q_train_loss=q_train_loss,
+        q_test_loss=q_test_loss,
+        train_q_diff=train_q_diff,
+        test_q_diff=test_q_diff,
+    )
+
+def train_test_split(oar, prngkey, test_ratio, num_train_samples):
+    num_test = int(num_train_samples*test_ratio)
+    test_choices = jax.random.choice(prngkey, num_train_samples, shape=(num_test,), replace=False)
+    test_mask = jnp.zeros((num_train_samples,), dtype=bool).at[test_choices].set(True)
+    # oar = {k: jax.random.shuffle(prngkey, v) for k, v in oar.items()}
+    return (
+        {k: v[jnp.logical_not(test_mask)] for k, v in oar.items()},
+        {k: v[test_mask] for k, v in oar.items()}, 
+        )
