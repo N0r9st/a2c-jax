@@ -64,6 +64,8 @@ def parse_args():
     parser.add_argument('--qf-update-batch-size', type=int, default=-1)
     parser.add_argument('--qf-update-epochs', type=int, default=1)
     parser.add_argument('--qf-test-ratio', type=float, default=.1)
+    parser.add_argument('--use-samples-for-log-update', action='store_true', default=False)
+
 
 
     args = parser.parse_args()
@@ -190,6 +192,7 @@ def update(args, cmd_args):
         qf_update_batch_size=cmd_args.qf_update_batch_size,
         qf_update_epochs=cmd_args.qf_update_epochs,
         qf_test_ratio=cmd_args.qf_test_ratio,
+        use_samples_for_log_update=cmd_args.use_samples_for_log_update,
     )
 
     args['sampling_type'] = cmd_args.sampling_type
