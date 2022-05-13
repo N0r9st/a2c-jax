@@ -50,7 +50,8 @@ def q_step(state, oar_tuple, prngkey,
     #     constant_params['qf_test_ratio'], 
     #     constant_params['num_train_samples'])
     train_oar, test_oar = oar_tuple
-
+    loss = jnp.array(0)
+    loss_dict = {}
     for epoch in range(constant_params['qf_update_epochs']):
         batches = get_batches(train_oar, constant_params['qf_update_batch_size'], prngkey)
         for batch in batches:
@@ -61,11 +62,11 @@ def q_step(state, oar_tuple, prngkey,
                 prngkey,
                 state.q_fn,
                 constant_params,)
-            new_state = state.apply_gradients(grads=grads)
+            state = state.apply_gradients(grads=grads)
 
     loss_dict.update(test_qf(prngkey, train_oar, test_oar, state.q_fn, state.params))
 
-    return new_state, (loss, loss_dict)
+    return state, (loss, loss_dict)
 
 def get_batches(oar, batch_size, prngkey):
     oar = {k: jax.random.permutation(prngkey, v, independent=True) for k, v in oar.items()}
