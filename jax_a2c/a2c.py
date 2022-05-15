@@ -41,7 +41,7 @@ def p_loss_fn(
 
     policy_loss = - (advantages * action_logprobs).mean()
     value_loss = ((returns - values)**2).mean()
-        
+    qp_loss = jnp.array(0)
     if constant_params['q_updates'] == 'rep':
         qp_loss = - (q_fn(jax.lax.stop_gradient({'params': params['qf_params']}), observations, action_samples).mean() + \
             constant_params['alpha']*dist_entropy)
