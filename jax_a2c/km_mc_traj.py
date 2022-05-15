@@ -79,7 +79,7 @@ def repeat(array, K):
 
 #     return trajectories
 
-def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_steps=1000):
+def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_steps=1000, firstrandom=False):
     observations = experience.observations # (num_steps, num_envs, obs_shape)
     dones = experience.dones
     states = experience.states
@@ -91,7 +91,11 @@ def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_step
     # (in_states, obs_shape) -> (K * in_states, obs_shape)
     flat_dones = repeat(dones, K)
 
-    _, flat_actions = policy_fn(prngkey, flat_observations)
+    if firstrandom:
+        flat_actions = jax.random.uniform(prngkey, minval=k_envs.action_space.low, maxval=k_envs.action_space.high, 
+        shape=flat_observations.shape[:-1] + k_envs.action_space.shape)
+    else:
+        _, flat_actions = policy_fn(prngkey, flat_observations)
 
     m_flat_observations = jnp.concatenate([flat_observations for _ in range(M)], axis=0)
     # (K * in_states, obs_shape) -> (M * K * in_states, obs_shape)

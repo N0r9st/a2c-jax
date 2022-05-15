@@ -1,3 +1,4 @@
+from ast import arg
 import functools
 import os
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
@@ -17,7 +18,8 @@ from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
 from jax_a2c.evaluation import eval, q_eval
 from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy
 from jax_a2c.utils import (Experience, collect_experience, create_train_state, select_random_states,
-                           process_experience, concat_trajectories, stack_experiences, process_rollout_output)
+                           process_experience, concat_trajectories, 
+                           stack_experiences, process_rollout_output,  process_mc_rollout_output)
 from jax_a2c.km_mc_traj import km_mc_rollouts
 from jax_a2c.saving import save_state, load_state
 from flax.core import freeze
@@ -183,6 +185,7 @@ def main(args: dict):
         #------------------------------------------------
         if args['type'] != 'standart':
             exp_list = []
+            add_args_list = []
             for remote in remotes:
 
                 prngkey, _ = jax.random.split(prngkey)
@@ -203,7 +206,10 @@ def main(args: dict):
                     add_args['advantages'] = advs
                     add_args['sampling_prob_temp'] = args['sampling_prob_temp']
                     
-                sampled_exp = select_random_states(prngkey, args['n_samples']//args['num_workers'], experience, type=args['sampling_type'], **add_args)
+                sampled_exp = select_random_states(
+                    prngkey, args['n_samples']//args['num_workers'], 
+                    experience, type=args['sampling_type'], **add_args)
+                add_args_list.append(add_args)
                 sampled_exp = Experience(
                     observations=sampled_exp.observations,
                     actions=None,# sampled_exp.actions,
@@ -227,9 +233,10 @@ def main(args: dict):
                     M=args['M'],
                     train_obs_rms=train_obs_rms,
                     train_ret_rms=train_ret_rms,
+                    firstrandom=False,
                     )
                 remote.send(to_worker)
-            #----------------------------------------------------------------
+
             original_experience = stack_experiences(exp_list)
             data_tuple = (
                 original_experience, 
@@ -237,6 +244,46 @@ def main(args: dict):
                     *[remote.recv() for remote in remotes]
                     )
                 )
+
+            #----------------------------------------------------------------
+            #                       NEGATIVES SAMPLING
+            #----------------------------------------------------------------
+            
+            if args['negative_sampling']:
+                for remote, experience, add_args in zip(remotes, exp_list, add_args_list):
+                    prngkey, _ = jax.random.split(prngkey)
+                        
+                    sampled_exp = select_random_states(
+                        prngkey, 
+                        args['n_samples']//args['num_workers'], 
+                        experience, type=args['sampling_type'], **add_args)
+                    prngkey, _ = jax.random.split(prngkey)
+                    to_worker = dict(
+                        prngkey=prngkey,
+                        experience=sampled_exp,
+                        gamma=args['gamma'],
+                        policy_fn=functools.partial(
+                            _apply_policy_fn, 
+                            params=state.params['policy_params'], 
+                            determenistic=args['km_determenistic']),
+                        max_steps=args['L'],
+                        K=args['K'],
+                        M=args['M'],
+                        train_obs_rms=train_obs_rms,
+                        train_ret_rms=train_ret_rms,
+                        firstrandom=True,
+                        )
+                    # print('sent!')
+                    remote.send(to_worker)
+                negative_exp = jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
+                    *[remote.recv() for remote in remotes]
+                    )
+                # print('received')
+                negative_oar = process_mc_rollout_output(
+                    state.apply_fn, state.params, 
+                    negative_exp, args['train_constants'])
+            #----------------------------------------------------------------
+            #----------------------------------------------------------------
         else:
             prngkey, _ = jax.random.split(prngkey)
             next_obs_and_dones, experience = collect_experience(
@@ -254,21 +301,28 @@ def main(args: dict):
         prngkey, _ = jax.random.split(prngkey)
 
         args['train_constants'] = args['train_constants'].copy({
-            'num_train_samples':len(oar['observations']),
+            # 'num_train_samples':len(oar['observations']),
             'qf_update_batch_size':args['train_constants']['qf_update_batch_size'] if \
             args['train_constants']['qf_update_batch_size'] > 0 else len(oar['observations']) 
             })
+        if args['negative_sampling']:
+            q_train_oar, q_test_oar = train_test_split(
+                jax.tree_util.tree_map(lambda *dicts: jnp.concatenate(dicts, axis=0),*(oar, negative_oar)),
+                prngkey, 
+                args['train_constants']['qf_test_ratio'], 
+                len(oar['observations']) + len(negative_oar['observations']))
 
-        train_oar, test_oar = train_test_split(
-            oar, 
-            prngkey, 
-            args['train_constants']['qf_test_ratio'], 
-            args['train_constants']['num_train_samples'])
+        else:
+            q_train_oar, q_test_oar = train_test_split(
+                oar,
+                prngkey, 
+                args['train_constants']['qf_test_ratio'], 
+                len(oar['observations']))
 
         state, (q_loss, q_loss_dict) = q_step(
             state, 
             # trajectories, 
-            (train_oar, test_oar), # (Experience(original trajectory), List[dicts](kml trajs))
+            (q_train_oar, q_test_oar), # (Experience(original trajectory), List[dicts](kml trajs))
             prngkey,
             constant_params=args['train_constants'],
             )

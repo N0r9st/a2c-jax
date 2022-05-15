@@ -65,6 +65,7 @@ def parse_args():
     parser.add_argument('--qf-update-epochs', type=int, default=1)
     parser.add_argument('--qf-test-ratio', type=float, default=.1)
     parser.add_argument('--use-samples-for-log-update', action='store_true', default=False)
+    parser.add_argument('--negative-sampling', action='store_true', default=False)
 
 
 
@@ -200,6 +201,8 @@ def update(args, cmd_args):
     args['n_samples'] = cmd_args.n_samples
     args['ignore_original_trajectory'] = cmd_args.ignore_original_trajectory
     args['km_determenistic'] = cmd_args.km_determenistic
+
+    args['negative_sampling'] = cmd_args.negative_sampling
 
     
     return args

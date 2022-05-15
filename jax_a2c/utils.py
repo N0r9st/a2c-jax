@@ -397,3 +397,32 @@ def process_rollout_output(apply_fn, params, data_tuple, constant_params):
         actions=actions,
         returns=returns_loggrad,
     )
+@functools.partial(jax.jit, static_argnames=('constant_params','apply_fn'))
+def process_mc_rollout_output(apply_fn, params, mc_rollouts_exp, constant_params):
+    mc_rollouts_returns = vmap_process_rewards_with_entropy(
+        apply_fn,
+        params['policy_params'],
+        mc_rollouts_exp['observations'],
+        mc_rollouts_exp['actions'],
+        mc_rollouts_exp['dones'],
+        mc_rollouts_exp['rewards'],
+        mc_rollouts_exp['bootstrapped'],
+        constant_params['alpha'],
+        constant_params['gamma'],
+        constant_params['entropy'],
+    )
+
+    mc_observations, mc_actions, mc_returns = vmap_process_mc_rollouts(
+        mc_rollouts_exp['observations'],
+        mc_rollouts_exp['actions'],
+        mc_rollouts_returns,
+        constant_params['M']
+    )
+    mc_observations, mc_actions, mc_returns = tuple(map(
+        lambda x: x.reshape((x.shape[0]*x.shape[1],) + x.shape[2:]), (mc_observations, mc_actions, mc_returns)
+    ))
+    return dict(
+        observations=mc_observations,
+        actions=mc_actions,
+        returns=mc_returns,
+    )
