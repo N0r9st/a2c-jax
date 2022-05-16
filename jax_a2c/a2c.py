@@ -51,6 +51,7 @@ def p_loss_fn(
             sampled_estimations = q_fn({'params': params['qf_params']}, observations, action_samples)
         else:
             sampled_estimations = q_fn({'params': params['qf_params']}, observations, actions)
+            sampled_action_logprobs = action_logprobs
         estimated_advantages = sampled_estimations - values
         qp_loss = - (jax.lax.stop_gradient(estimated_advantages) * sampled_action_logprobs).mean()
 
