@@ -49,11 +49,12 @@ def p_loss_fn(
     elif constant_params['q_updates'] == 'log':
         if constant_params['use_samples_for_log_update']:
             sampled_estimations = q_fn({'params': params['qf_params']}, observations, action_samples)
+            q_logprobs = sampled_action_logprobs
         else:
             sampled_estimations = q_fn({'params': params['qf_params']}, observations, actions)
-            sampled_action_logprobs = action_logprobs
+            q_logprobs = action_logprobs
         estimated_advantages = sampled_estimations - values
-        qp_loss = - (jax.lax.stop_gradient(estimated_advantages) * sampled_action_logprobs).mean()
+        qp_loss = - (jax.lax.stop_gradient(estimated_advantages) * q_logprobs).mean()
 
 
     loss = constant_params['value_loss_coef']*value_loss + policy_loss - constant_params['entropy_coef']*dist_entropy + \
