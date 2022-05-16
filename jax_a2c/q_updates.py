@@ -53,6 +53,7 @@ def q_step(state, oar_tuple, prngkey,
     loss = jnp.array(0)
     loss_dict = {}
     for epoch in range(constant_params['qf_update_epochs']):
+        prngkey, _ = jax.random.split(prngkey)
         batches = get_batches(train_oar, constant_params['qf_update_batch_size'], prngkey)
         for batch in batches:
             (loss, loss_dict), grads = jax.value_and_grad(q_loss_fn, has_aux=True)(
