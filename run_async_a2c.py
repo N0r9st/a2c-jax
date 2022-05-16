@@ -186,6 +186,7 @@ def main(args: dict):
         if args['type'] != 'standart':
             exp_list = []
             add_args_list = []
+            not_sampled_exp_list = []
             for remote in remotes:
 
                 prngkey, _ = jax.random.split(prngkey)
@@ -206,9 +207,12 @@ def main(args: dict):
                     add_args['advantages'] = advs
                     add_args['sampling_prob_temp'] = args['sampling_prob_temp']
                     
-                sampled_exp = select_random_states(
+                sampled_exp, not_sampled_exp = select_random_states(
                     prngkey, args['n_samples']//args['num_workers'], 
                     experience, type=args['sampling_type'], **add_args)
+
+                not_sampled_exp_list.append(not_sampled_exp)
+
                 add_args_list.append(add_args)
                 sampled_exp = Experience(
                     observations=sampled_exp.observations,
@@ -238,6 +242,7 @@ def main(args: dict):
                 remote.send(to_worker)
 
             original_experience = stack_experiences(exp_list)
+            # not_sampled_exp = stack_experiences(not_sampled_exp_list)
             data_tuple = (
                 original_experience, 
                 jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
@@ -253,7 +258,7 @@ def main(args: dict):
                 for remote, experience, add_args in zip(remotes, exp_list, add_args_list):
                     prngkey, _ = jax.random.split(prngkey)
                         
-                    sampled_exp = select_random_states(
+                    sampled_exp, not_sampled_exp= select_random_states(
                         prngkey, 
                         args['n_samples']//args['num_workers'], 
                         experience, type=args['sampling_type'], **add_args)
