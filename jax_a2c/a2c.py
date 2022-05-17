@@ -55,6 +55,7 @@ def p_loss_fn(
             q_logprobs = action_logprobs
         estimated_advantages = sampled_estimations - values
         qp_loss = - (jax.lax.stop_gradient(estimated_advantages) * q_logprobs).mean()
+        loss_dict.update(estimations_mean_l1= jnp.abs(estimated_advantages - advantages).mean(),)
 
 
     loss = constant_params['value_loss_coef']*value_loss + policy_loss - constant_params['entropy_coef']*dist_entropy + \
@@ -65,7 +66,6 @@ def p_loss_fn(
         policy_loss=policy_loss, 
         dist_entropy=dist_entropy, 
         advantages_max = jnp.abs(advantages).max(),
-        estimations_mean_l1= jnp.abs(estimated_advantages - advantages).mean(),
         min_std=jnp.exp(log_stds).min(),
         mean_returns=returns.mean(),
         std_returns=returns.std(),
