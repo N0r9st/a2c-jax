@@ -59,7 +59,7 @@ class QFunction(nn.Module):
             kernel_init=nn.initializers.orthogonal(scale=jnp.sqrt(2)), 
             name='Q_values')(x)
 
-        return qvalues
+        return qvalues[..., 0]
 
 
 class DiagGaussianStateDependentPolicy(nn.Module):

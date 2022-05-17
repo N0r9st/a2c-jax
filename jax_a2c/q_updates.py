@@ -27,7 +27,7 @@ def q_loss_fn(
     returns = oar['returns']
     
     q_estimations = q_fn({'params': params['qf_params']}, observations, actions)
-    q_loss = ((q_estimations - jax.lax.stop_gradient(returns))**2).mean()
+    q_loss = ((q_estimations - returns)**2).mean()
 
 
     loss = constant_params['q_loss_multiplier'] * q_loss
