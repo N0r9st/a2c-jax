@@ -65,6 +65,7 @@ def p_loss_fn(
         policy_loss=policy_loss, 
         dist_entropy=dist_entropy, 
         advantages_max = jnp.abs(advantages).max(),
+        estimations_mean_l1= jnp.abs(estimated_advantages - advantages).mean(),
         min_std=jnp.exp(log_stds).min(),
         mean_returns=returns.mean(),
         std_returns=returns.std(),
