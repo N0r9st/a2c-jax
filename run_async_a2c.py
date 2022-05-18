@@ -12,7 +12,7 @@ import itertools
 import multiprocessing as mp
 
 from jax_a2c.a2c import p_step
-from jax_a2c.q_updates import q_step, train_test_split
+from jax_a2c.q_updates import q_step, train_test_split, test_qf
 from jax_a2c.distributions import sample_action_from_normal as sample_action
 from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
 from jax_a2c.evaluation import eval, q_eval
@@ -115,7 +115,7 @@ def main(args: dict):
         action_dim=envs.action_space.shape[0],
         init_log_std=args['init_log_std'])
 
-    qf_model = QFunction(hidden_sizes=args['hidden_sizes'], action_dim=envs.action_space.shape[0],)
+    qf_model = QFunction(hidden_sizes=args['q_hidden_sizes'], action_dim=envs.action_space.shape[0],)
 
     prngkey = jax.random.PRNGKey(args['seed'])
 
@@ -327,10 +327,11 @@ def main(args: dict):
         state, (q_loss, q_loss_dict) = q_step(
             state, 
             # trajectories, 
-            q_train_oar, q_test_oar, # (Experience(original trajectory), List[dicts](kml trajs))
+            q_train_oar, # (Experience(original trajectory), List[dicts](kml trajs))
             prngkey,
             constant_params=args['train_constants'],
             )
+        q_loss_dict.update(test_qf(prngkey, q_train_oar, q_test_oar, state.q_fn, state.params))
         prngkey, _ = jax.random.split(prngkey)
         state, (loss, loss_dict) = p_step(
             state, 

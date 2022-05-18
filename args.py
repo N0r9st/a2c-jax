@@ -23,6 +23,7 @@ def parse_args():
 
 
     parser.add_argument('--layers', type=str, default='64-64')
+    parser.add_argument('--q-layers', type=str, default=None)
     parser.add_argument('--lr', type=float, default=3e-4)
     parser.add_argument('--linear-decay', action='store_true', default=False)
     parser.add_argument('--num-steps', type=int, default=32)
@@ -138,6 +139,10 @@ def update(args, cmd_args):
 
     args['num_timesteps'] = cmd_args.num_timesteps
     args['hidden_sizes'] = tuple(int(x) for x in cmd_args.layers.split('-'))
+    if cmd_args.q_layers is not None:
+        args['q_hidden_sizes'] = tuple(int(x) for x in cmd_args.q_layers.split('-'))
+    else:
+        args['q_hidden_sizes'] = args['hidden_sizes']
     args['lr'] = cmd_args.lr
     args['linear_decay'] = cmd_args.linear_decay
     args['num_steps'] = cmd_args.num_steps

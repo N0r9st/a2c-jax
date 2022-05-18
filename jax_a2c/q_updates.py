@@ -41,8 +41,8 @@ def q_loss_fn(
         )
     return loss, loss_dict
 
-@functools.partial(jax.jit, static_argnums=(4,))
-def q_step(state, train_oar, test_oar, prngkey,
+@functools.partial(jax.jit, static_argnums=(3,))
+def q_step(state, train_oar, prngkey,
     constant_params):
     loss = jnp.array(0)
     loss_dict = {}
@@ -59,7 +59,7 @@ def q_step(state, train_oar, test_oar, prngkey,
                 constant_params,)
             state = state.apply_gradients(grads=grads)
 
-    loss_dict.update(test_qf(prngkey, train_oar, test_oar, state.q_fn, state.params))
+    # loss_dict.update(test_qf(prngkey, train_oar, test_oar, state.q_fn, state.params))
 
     return state, (loss, loss_dict)
 
