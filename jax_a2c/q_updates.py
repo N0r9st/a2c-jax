@@ -41,18 +41,12 @@ def q_loss_fn(
         )
     return loss, loss_dict
 
-@functools.partial(jax.jit, static_argnums=(3,))
-def q_step(state, oar_tuple, prngkey,
+@functools.partial(jax.jit, static_argnums=(4,))
+def q_step(state, train_oar, test_oar, prngkey,
     constant_params):
-    # train_oar, test_oar = train_test_split(
-    #     oar, 
-    #     prngkey, 
-    #     constant_params['qf_test_ratio'], 
-    #     constant_params['num_train_samples'])
-    train_oar, test_oar = oar_tuple
     loss = jnp.array(0)
     loss_dict = {}
-    for epoch in range(constant_params['qf_update_epochs']):
+    for _ in range(constant_params['qf_update_epochs']):
         prngkey, _ = jax.random.split(prngkey)
         batches = get_batches(train_oar, constant_params['qf_update_batch_size'], prngkey)
         for batch in batches:
@@ -70,11 +64,10 @@ def q_step(state, oar_tuple, prngkey,
     return state, (loss, loss_dict)
 
 def get_batches(oar, batch_size, prngkey):
+    if batch_size <0:
+        return [oar]
     oar = {k: jax.random.permutation(prngkey, v, independent=True) for k, v in oar.items()}
     num_obs = len(oar['observations'])
-    # for i in range(0, num_obs, batch_size):
-    #     print('IIIIIIIII', i, batch_size)
-    #     yield {k: v[i:i+batch_size] for k, v in oar.items()}
     batches = []
     for i in range(0, num_obs, batch_size):
         batches.append({k: v[i:i+batch_size] for k, v in oar.items()})
@@ -108,8 +101,10 @@ def test_qf(prngkey, train_oar, test_oar, q_fn, params):
     return dict(
         q_train_loss=q_train_loss,
         q_test_loss=q_test_loss,
+        q_train_test_loss_diff = q_test_loss - q_train_loss,
         train_q_diff=train_q_diff,
         test_q_diff=test_q_diff,
+
     )
 
 def train_test_split(oar, prngkey, test_ratio, num_train_samples):

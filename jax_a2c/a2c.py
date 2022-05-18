@@ -54,11 +54,7 @@ def p_loss_fn(
             sampled_estimations = q_fn({'params': params['qf_params']}, observations, actions)
             q_logprobs = action_logprobs
         estimated_advantages = sampled_estimations - values
-        print(sampled_estimations.shape)
-        print(estimated_advantages.shape)
-        print(values.shape)
         qp_loss = - (jax.lax.stop_gradient(estimated_advantages) * q_logprobs).mean()
-        print(q_logprobs.shape, estimated_advantages.shape)
         loss_dict.update(estimations_mean_l1= jnp.abs(estimated_advantages - advantages).mean(),)
 
 

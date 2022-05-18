@@ -327,7 +327,7 @@ def main(args: dict):
         state, (q_loss, q_loss_dict) = q_step(
             state, 
             # trajectories, 
-            (q_train_oar, q_test_oar), # (Experience(original trajectory), List[dicts](kml trajs))
+            q_train_oar, q_test_oar, # (Experience(original trajectory), List[dicts](kml trajs))
             prngkey,
             constant_params=args['train_constants'],
             )
@@ -339,7 +339,7 @@ def main(args: dict):
             prngkey,
             constant_params=args['train_constants'],
             )
-        loss_dict.update(q_loss_dict)
+        # loss_dict.update(q_loss_dict)
         if args['save'] and (current_update % args['save_every']):
             additional = {}
             additional['obs_rms'] = deepcopy(envs.obs_rms)
@@ -361,6 +361,7 @@ def main(args: dict):
             loss_dict = jax.tree_map(lambda x: x.item(), loss_dict)
             loss_dict['loss'] = loss.item()
             wandb.log({'training/' + k: v for k, v in loss_dict.items()}, step=current_update)
+            wandb.log({'q-training/' + k: v for k, v in q_loss_dict.items()}, step=current_update)
 
 if __name__=='__main__':
 
