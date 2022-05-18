@@ -360,6 +360,7 @@ def main(args: dict):
             epoch_times = []
 
             loss_dict = jax.tree_map(lambda x: x.item(), loss_dict)
+            q_loss_dict = jax.tree_map(lambda x: x.item(), q_loss_dict)
             loss_dict['loss'] = loss.item()
             wandb.log({'training/' + k: v for k, v in loss_dict.items()}, step=current_update)
             wandb.log({'q-training/' + k: v for k, v in q_loss_dict.items()}, step=current_update)
