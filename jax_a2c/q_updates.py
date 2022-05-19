@@ -66,7 +66,8 @@ def q_step(state, train_oar, prngkey,
 def get_batches(oar, batch_size, prngkey):
     if batch_size <0:
         return [oar]
-    oar = {k: jax.random.permutation(prngkey, v, independent=True) for k, v in oar.items()}
+    perm = jax.random.permutation(prngkey, len(oar['actions']))
+    oar = {k: v[perm] for k, v in oar.items()}
     num_obs = len(oar['observations'])
     batches = []
     for i in range(0, num_obs, batch_size):

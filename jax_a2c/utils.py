@@ -351,6 +351,19 @@ def substract_from_list(lst, ind):
     return out
 
 def process_mc_rollouts(observations, actions, returns, M):
+    # print(observations.shape, actions.shape, returns.shape)
+    # returns = returns.reshape(M, returns.shape[0]//M).mean(axis=0)
+    # observations = observations[0]
+    # actions = actions[0]
+
+    # observations = observations.reshape(M, observations.shape[0]//M, -1)[0]
+    # actions = actions.reshape(M, actions.shape[0]//M, -1)[0]
+
+    # observations = observations.reshape(M, observations.shape[1],)
+    # actions = actions.reshape(M, actions.shape[1],)
+
+    # observations = observations[0, :observations.shape[1]//M]
+    # actions = actions[0, :actions.shape[1]//M]
     returns = returns.reshape(M, returns.shape[0]//M).mean(axis=0)
     observations = observations[0, :observations.shape[1]//M]
     actions = actions[0, :actions.shape[1]//M]
@@ -394,6 +407,7 @@ def process_rollout_output(apply_fn, params, data_tuple, constant_params):
             mc_rollouts_returns,
             constant_params['M']
         )
+        print(mc_actions.shape)
         mc_observations, mc_actions, mc_returns = tuple(map(
             lambda x: x.reshape((x.shape[0]*x.shape[1],) + x.shape[2:]), (mc_observations, mc_actions, mc_returns)
         ))

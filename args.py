@@ -54,7 +54,7 @@ def parse_args():
     parser.add_argument('--sampling-prob-temp', type=float, default=1)
     parser.add_argument('--n-samples', type=int, default=0)
     parser.add_argument('--ignore-original-trajectory', action='store_true', default=False)
-    parser.add_argument('--km-determenistic', action='store_true', default=True)
+    parser.add_argument('--km-determenistic', action='store_true', default=False)
 
     parser.add_argument('--gradstop', type=str, default='full')
 
