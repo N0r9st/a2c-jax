@@ -166,10 +166,12 @@ def main(args: dict):
 
 
     args['train_constants'] = freeze(args['train_constants'])
+
+    jit_q_fn = jax.jit(state.q_fn)
     for current_update in range(start_update, total_updates):
         st = time.time()
         policy_fn = functools.partial(_jit_policy_fn, params=state.params['policy_params'])
-        if state.step%args['eval_every']==0:
+        if current_update%args['eval_every']==0:
             eval_envs.obs_rms = deepcopy(envs.obs_rms)
             _, eval_return = eval(state.apply_fn, state.params['policy_params'], eval_envs)
             print(f'Updates {current_update}/{total_updates}. Eval return: {eval_return}. Epoch_time: {epoch_time}.')
@@ -278,12 +280,10 @@ def main(args: dict):
                         train_ret_rms=train_ret_rms,
                         firstrandom=True,
                         )
-                    # print('sent!')
                     remote.send(to_worker)
                 negative_exp = jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
                     *[remote.recv() for remote in remotes]
                     )
-                # print('received')
                 negative_oar = process_mc_rollout_output(
                     state.apply_fn, state.params, 
                     negative_exp, args['train_constants'])
@@ -305,11 +305,7 @@ def main(args: dict):
         oar = process_rollout_output(state.apply_fn, state.params, data_tuple, args['train_constants'])
         prngkey, _ = jax.random.split(prngkey)
 
-        args['train_constants'] = args['train_constants'].copy({
-            # 'num_train_samples':len(oar['observations']),
-            'qf_update_batch_size':args['train_constants']['qf_update_batch_size'] if \
-            args['train_constants']['qf_update_batch_size'] > 0 else len(oar['observations']) 
-            })
+        
         if args['negative_sampling']:
             q_train_oar, q_test_oar = train_test_split(
                 jax.tree_util.tree_map(lambda *dicts: jnp.concatenate(dicts, axis=0),*(oar, negative_oar)),
@@ -324,23 +320,26 @@ def main(args: dict):
                 args['train_constants']['qf_test_ratio'], 
                 len(oar['observations']))
 
-        state, (q_loss, q_loss_dict) = q_step(
-            state, 
-            # trajectories, 
-            q_train_oar, # (Experience(original trajectory), List[dicts](kml trajs))
-            prngkey,
-            constant_params=args['train_constants'],
-            )
-        q_loss_dict.update(test_qf(prngkey, q_train_oar, q_test_oar, state.q_fn, state.params))
+        args['train_constants'] = args['train_constants'].copy({
+            'qf_update_batch_size':args['train_constants']['qf_update_batch_size'],
+            'q_train_len':len(q_train_oar['observations']),
+            })
+        
+        if args['train_constants']['q_updates'] != 'none':
+            state, (q_loss, q_loss_dict) = q_step(
+                state, 
+                # trajectories, 
+                q_train_oar, q_test_oar, # (Experience(original trajectory), List[dicts](kml trajs))
+                prngkey,
+                constant_params=args['train_constants'], jit_q_fn=jit_q_fn
+                )
         prngkey, _ = jax.random.split(prngkey)
         state, (loss, loss_dict) = p_step(
             state, 
-            # trajectories, 
-            oar, # (Experience(original trajectory), List[dicts](kml trajs))
+            oar, 
             prngkey,
             constant_params=args['train_constants'],
             )
-        # loss_dict.update(q_loss_dict)
         if args['save'] and (current_update % args['save_every']):
             additional = {}
             additional['obs_rms'] = deepcopy(envs.obs_rms)

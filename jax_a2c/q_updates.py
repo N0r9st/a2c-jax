@@ -41,39 +41,76 @@ def q_loss_fn(
         )
     return loss, loss_dict
 
-@functools.partial(jax.jit, static_argnums=(3,))
-def q_step(state, train_oar, prngkey,
-    constant_params):
+# @functools.partial(jax.jit, static_argnums=(4,))
+def q_step(state, train_oar, test_oar, prngkey,
+    constant_params, jit_q_fn, ):
     loss = jnp.array(0)
     loss_dict = {}
-    for _ in range(constant_params['qf_update_epochs']):
-        prngkey, _ = jax.random.split(prngkey)
-        batches = get_batches(train_oar, constant_params['qf_update_batch_size'], prngkey)
-        for batch in batches:
-            (loss, loss_dict), grads = jax.value_and_grad(q_loss_fn, has_aux=True)(
-                state.params, 
-                state.apply_fn, 
-                batch,
-                prngkey,
-                state.q_fn,
-                constant_params,)
-            state = state.apply_gradients(grads=grads)
 
-    # loss_dict.update(test_qf(prngkey, train_oar, test_oar, state.q_fn, state.params))
+    
+    if not constant_params['use_q_tolerance']:
+        for _ in range(constant_params['qf_update_epochs']):
+            prngkey, _ = jax.random.split(prngkey)
+            batches = get_batches(
+                train_oar, constant_params['qf_update_batch_size'], 
+                prngkey, constant_params['q_train_len'])
+            for batch in batches:
+                state, _ = q_microstep(state, batch, prngkey, constant_params)
+            q_loss_dict = test_qf(prngkey, train_oar, test_oar, jit_q_fn, state.params)
+    else:
+        min_test_loss = float('inf')
+        tolerance = 0
+        epoch_count = 0
+        for _ in range(512):
+            prngkey, _ = jax.random.split(prngkey)
+            batches = get_batches(
+                train_oar, constant_params['qf_update_batch_size'], 
+                prngkey, constant_params['q_train_len'])
+            for batch in batches:
+                state, _ = q_microstep(state, batch, prngkey, constant_params)
+            epoch_count += 1
 
-    return state, (loss, loss_dict)
+            q_loss_dict = test_qf(prngkey, train_oar, test_oar, jit_q_fn, state.params)
+            if q_loss_dict['q_test_loss'] < min_test_loss:
+                best_state = state
+                min_test_loss = q_loss_dict['q_test_loss'] 
+                tolerance = 0
+            else:
+                tolerance += 1
+            
+            if tolerance > constant_params['max_q_tolerance']:
+                q_loss_dict['epoch_count'] = jnp.array(epoch_count - tolerance)
+                state = best_state
+                break
+            
+    return state, (loss, q_loss_dict)
 
-def get_batches(oar, batch_size, prngkey):
+
+@functools.partial(jax.jit, static_argnums=(3,4,5,6,))
+def q_microstep(state, batch, prngkey,
+    constant_params):
+    (loss, loss_dict), grads = jax.value_and_grad(q_loss_fn, has_aux=True)(
+        state.params, 
+        state.apply_fn, 
+        batch,
+        prngkey,
+        state.q_fn,
+        constant_params,)
+    new_state = state.apply_gradients(grads=grads)
+    return new_state, (loss, loss_dict)
+    
+@functools.partial(jax.jit,static_argnums=(1,3,))
+def get_batches(oar, batch_size, prngkey, data_len):
     if batch_size <0:
         return [oar]
-    perm = jax.random.permutation(prngkey, len(oar['actions']))
+    perm = jax.random.permutation(prngkey, data_len)
     oar = {k: v[perm] for k, v in oar.items()}
-    num_obs = len(oar['observations'])
     batches = []
-    for i in range(0, num_obs, batch_size):
+    for i in range(0, data_len, batch_size):
         batches.append({k: v[i:i+batch_size] for k, v in oar.items()})
     return batches
 
+@functools.partial(jax.jit,static_argnums=(3,))
 def test_qf(prngkey, train_oar, test_oar, q_fn, params):
     train_observations = train_oar['observations']
     train_actions = train_oar['actions']
@@ -90,12 +127,12 @@ def test_qf(prngkey, train_oar, test_oar, q_fn, params):
     q_test_loss = ((q_test_estimations - test_returns)**2).mean()
 
 
-    train_rand_actions = jax.random.uniform(prngkey, shape=(len(train_observations), train_actions.shape[-1]))
+    train_rand_actions = jax.random.uniform(prngkey, shape=train_actions.shape)
     train_rand_q_estimations = q_fn({'params': params['qf_params']}, train_observations, train_rand_actions)
     train_q_diff = (q_train_estimations - train_rand_q_estimations).mean()
     
 
-    test_rand_actions = jax.random.uniform(prngkey, shape=(len(test_observations), test_actions.shape[-1]))
+    test_rand_actions = jax.random.uniform(prngkey, shape=test_actions.shape)
     test_rand_q_estimations = q_fn({'params': params['qf_params']}, test_observations, test_rand_actions)
     test_q_diff = (q_test_estimations - test_rand_q_estimations).mean()
 
@@ -108,6 +145,7 @@ def test_qf(prngkey, train_oar, test_oar, q_fn, params):
 
     )
 
+# @functools.partial(jax.jit,static_argnums=(2,3))
 def train_test_split(oar, prngkey, test_ratio, num_train_samples):
     num_test = int(num_train_samples*test_ratio)
     test_choices = jax.random.choice(prngkey, num_train_samples, shape=(num_test,), replace=False)

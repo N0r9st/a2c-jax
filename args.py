@@ -69,6 +69,11 @@ def parse_args():
     parser.add_argument('--negative-sampling', action='store_true', default=False)
 
 
+    parser.add_argument('--use-q-tolerance', action='store_true', default=False)
+    parser.add_argument('--max-q-tolerance', type=int, default=10)
+    
+
+
 
     args = parser.parse_args()
     return args
@@ -199,6 +204,8 @@ def update(args, cmd_args):
         qf_update_epochs=cmd_args.qf_update_epochs,
         qf_test_ratio=cmd_args.qf_test_ratio,
         use_samples_for_log_update=cmd_args.use_samples_for_log_update,
+        use_q_tolerance=cmd_args.use_q_tolerance,
+        max_q_tolerance=cmd_args.max_q_tolerance,
     )
 
     args['sampling_type'] = cmd_args.sampling_type

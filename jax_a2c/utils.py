@@ -407,7 +407,6 @@ def process_rollout_output(apply_fn, params, data_tuple, constant_params):
             mc_rollouts_returns,
             constant_params['M']
         )
-        print(mc_actions.shape)
         mc_observations, mc_actions, mc_returns = tuple(map(
             lambda x: x.reshape((x.shape[0]*x.shape[1],) + x.shape[2:]), (mc_observations, mc_actions, mc_returns)
         ))
