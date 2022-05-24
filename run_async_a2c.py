@@ -49,8 +49,10 @@ def _worker(remote, k_remotes, parent_remote, spaces, device) -> None:
             k_envs.obs_rms = args.pop('train_obs_rms')
             k_envs.ret_rms = args.pop('train_ret_rms')
             args['policy_fn'] = jax.jit(args['policy_fn'])
-            out = km_mc_rollouts_(**args)
-            remote.send(out)
+            for _ in range(1):
+                out = km_mc_rollouts_(**args)
+            for _ in range(1):
+                remote.send(out)
         except EOFError:
             break
 
@@ -245,7 +247,8 @@ def main(args: dict):
 
             original_experience = stack_experiences(exp_list)
             # not_sampled_exp = stack_experiences(not_sampled_exp_list)
-            data_tuple = (
+            for _ in range(1):
+                data_tuple = (
                 original_experience, 
                 jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
                     *[remote.recv() for remote in remotes]
@@ -281,9 +284,10 @@ def main(args: dict):
                         firstrandom=True,
                         )
                     remote.send(to_worker)
-                negative_exp = jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
-                    *[remote.recv() for remote in remotes]
-                    )
+                for _ in range(1):
+                    negative_exp = jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
+                        *[remote.recv() for remote in remotes]
+                        )
                 negative_oar = process_mc_rollout_output(
                     state.apply_fn, state.params, 
                     negative_exp, args['train_constants'])
@@ -301,45 +305,45 @@ def main(args: dict):
                 experience, 
                 None,
                 )
-        
-        oar = process_rollout_output(state.apply_fn, state.params, data_tuple, args['train_constants'])
-        prngkey, _ = jax.random.split(prngkey)
+        for _ in range(1):
+            oar = process_rollout_output(state.apply_fn, state.params, data_tuple, args['train_constants'])
+            prngkey, _ = jax.random.split(prngkey)
 
-        
-        if args['negative_sampling']:
-            q_train_oar, q_test_oar = train_test_split(
-                jax.tree_util.tree_map(lambda *dicts: jnp.concatenate(dicts, axis=0),*(oar, negative_oar)),
-                prngkey, 
-                args['train_constants']['qf_test_ratio'], 
-                len(oar['observations']) + len(negative_oar['observations']))
+            
+            if args['negative_sampling']:
+                q_train_oar, q_test_oar = train_test_split(
+                    jax.tree_util.tree_map(lambda *dicts: jnp.concatenate(dicts, axis=0),*(oar, negative_oar)),
+                    prngkey, 
+                    args['train_constants']['qf_test_ratio'], 
+                    len(oar['observations']) + len(negative_oar['observations']))
 
-        else:
-            q_train_oar, q_test_oar = train_test_split(
-                oar,
-                prngkey, 
-                args['train_constants']['qf_test_ratio'], 
-                len(oar['observations']))
+            else:
+                q_train_oar, q_test_oar = train_test_split(
+                    oar,
+                    prngkey, 
+                    args['train_constants']['qf_test_ratio'], 
+                    len(oar['observations']))
 
-        args['train_constants'] = args['train_constants'].copy({
-            'qf_update_batch_size':args['train_constants']['qf_update_batch_size'],
-            'q_train_len':len(q_train_oar['observations']),
-            })
-        
-        if args['train_constants']['q_updates'] != 'none':
-            state, (q_loss, q_loss_dict) = q_step(
+            args['train_constants'] = args['train_constants'].copy({
+                'qf_update_batch_size':args['train_constants']['qf_update_batch_size'],
+                'q_train_len':len(q_train_oar['observations']),
+                })
+            
+            if args['train_constants']['q_updates'] != 'none':
+                state, (q_loss, q_loss_dict) = q_step(
+                    state, 
+                    # trajectories, 
+                    q_train_oar, q_test_oar, # (Experience(original trajectory), List[dicts](kml trajs))
+                    prngkey,
+                    constant_params=args['train_constants'], jit_q_fn=jit_q_fn
+                    )
+            prngkey, _ = jax.random.split(prngkey)
+            state, (loss, loss_dict) = p_step(
                 state, 
-                # trajectories, 
-                q_train_oar, q_test_oar, # (Experience(original trajectory), List[dicts](kml trajs))
+                oar, 
                 prngkey,
-                constant_params=args['train_constants'], jit_q_fn=jit_q_fn
+                constant_params=args['train_constants'],
                 )
-        prngkey, _ = jax.random.split(prngkey)
-        state, (loss, loss_dict) = p_step(
-            state, 
-            oar, 
-            prngkey,
-            constant_params=args['train_constants'],
-            )
         if args['save'] and (current_update % args['save_every']):
             additional = {}
             additional['obs_rms'] = deepcopy(envs.obs_rms)
@@ -349,6 +353,7 @@ def main(args: dict):
 
         epoch_times.append(time.time() - st)
         epoch_time = np.mean(epoch_times)
+        epoch_times = []
         if args['wb_flag'] and not (current_update % args['log_freq']):
             wandb.log({
                 'time/timestep': timestep, 
@@ -356,7 +361,7 @@ def main(args: dict):
                 'time/time': epoch_time,
                 'evaluation/score': eval_return,}, 
                 commit=False, step=current_update)
-            epoch_times = []
+            
 
             loss_dict = jax.tree_map(lambda x: x.item(), loss_dict)
             q_loss_dict = jax.tree_map(lambda x: x.item(), q_loss_dict)
