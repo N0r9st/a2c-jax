@@ -305,7 +305,7 @@ def main(args: dict):
                 experience, 
                 None,
                 )
-        for _ in range(2):
+        for _ in range(1):
             oar = process_rollout_output(state.apply_fn, state.params, data_tuple, args['train_constants'])
             prngkey, _ = jax.random.split(prngkey)
 
