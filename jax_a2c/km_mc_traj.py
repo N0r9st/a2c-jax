@@ -55,7 +55,7 @@ def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_step
             _, prngkey = jax.random.split(prngkey)
             if l != 0:                
                 _, acts = policy_fn(prngkey, ob) 
-                
+            acts = np.array(acts)
             next_ob, rews, d, info = k_envs.step(acts)
             all_rewards_array[l, slc: slc + num_envs] = rews
             all_ds_array[l + 1, slc: slc + num_envs] = d

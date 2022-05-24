@@ -108,6 +108,7 @@ def collect_experience(
         observations = next_observations
         _, prngkey = jax.random.split(prngkey)
         values, actions = policy_fn(prngkey, observations) 
+        actions = np.array(actions)
         next_observations, rewards, dones, info = envs.step(actions)
         observations_list.append(observations)
         actions_list.append(np.array(actions))
