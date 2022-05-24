@@ -51,7 +51,7 @@ def _worker(remote, k_remotes, parent_remote, spaces, device) -> None:
             args['policy_fn'] = jax.jit(args['policy_fn'])
             for _ in range(1):
                 out = km_mc_rollouts_(**args)
-            for _ in range(2):
+            for _ in range(1):
                 remote.send(out)
         except EOFError:
             break
@@ -247,7 +247,7 @@ def main(args: dict):
 
             original_experience = stack_experiences(exp_list)
             # not_sampled_exp = stack_experiences(not_sampled_exp_list)
-            for _ in range(2):
+            for _ in range(1):
                 data_tuple = (
                 original_experience, 
                 jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
@@ -284,7 +284,7 @@ def main(args: dict):
                         firstrandom=True,
                         )
                     remote.send(to_worker)
-                for _ in range(2):
+                for _ in range(1):
                     negative_exp = jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
                         *[remote.recv() for remote in remotes]
                         )
@@ -305,7 +305,7 @@ def main(args: dict):
                 experience, 
                 None,
                 )
-        for _ in range(1):
+        for _ in range(2):
             oar = process_rollout_output(state.apply_fn, state.params, data_tuple, args['train_constants'])
             prngkey, _ = jax.random.split(prngkey)
 
