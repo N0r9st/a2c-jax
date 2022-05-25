@@ -79,12 +79,30 @@ def q_step(state, train_oar, test_oar, prngkey,
                 tolerance += 1
             
             if tolerance > constant_params['max_q_tolerance']:
-                q_loss_dict['epoch_count'] = jnp.array(epoch_count - tolerance)
+                epoch_count = epoch_count - tolerance
+                q_loss_dict['epoch_count'] = jnp.array(epoch_count)
                 state = best_state
                 break
-            
+
+        if constant_params['full_data_for_q_update']:
+            oar = merge_train_test(train_oar, test_oar)
+            for _ in range(epoch_count):
+                prngkey, _ = jax.random.split(prngkey)
+                batches = get_batches(
+                    oar, constant_params['qf_update_batch_size'], 
+                    prngkey, constant_params['q_train_len'])
+                for batch in batches:
+                    state, _ = q_microstep(state, batch, prngkey, constant_params)
+                q_loss_dict = test_qf(prngkey, train_oar, test_oar, jit_q_fn, state.params)
+
     return state, (loss, q_loss_dict)
 
+@jax.jit
+def merge_train_test(train_oar, test_oar):
+    oar = {}
+    for k in train_oar:
+        oar[k] = jnp.concatenate((train_oar[k], test_oar[k]), axis=0)
+    return oar
 
 @functools.partial(jax.jit, static_argnums=(3,4,5,6,))
 def q_microstep(state, batch, prngkey,

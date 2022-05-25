@@ -71,6 +71,7 @@ def parse_args():
 
     parser.add_argument('--use-q-tolerance', action='store_true', default=False)
     parser.add_argument('--max-q-tolerance', type=int, default=10)
+    parser.add_argument('--full-data-for-q-update', action='store_true', default=False)
     
 
 
@@ -206,6 +207,7 @@ def update(args, cmd_args):
         use_samples_for_log_update=cmd_args.use_samples_for_log_update,
         use_q_tolerance=cmd_args.use_q_tolerance,
         max_q_tolerance=cmd_args.max_q_tolerance,
+        full_data_for_q_update=cmd_args.full_data_for_q_update,
     )
 
     args['sampling_type'] = cmd_args.sampling_type
