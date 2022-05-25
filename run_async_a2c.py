@@ -185,6 +185,7 @@ def main(args: dict):
             eval_envs.obs_rms = deepcopy(envs.obs_rms)
             _, eval_return = eval(state.apply_fn, state.params['policy_params'], eval_envs)
             print(f'Updates {current_update}/{total_updates}. Eval return: {eval_return}. Epoch_time: {epoch_time}.')
+            prdict['epoch_time'] = epoch_time
             print({k: np.mean(v) for k, v in prdict.items()})
             prdict = defaultdict(list)
 
