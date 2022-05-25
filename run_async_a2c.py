@@ -333,6 +333,7 @@ def main(args: dict):
                 prngkey,
                 constant_params=args['train_constants'], jit_q_fn=jit_q_fn
                 )
+            state = state.replace(step=current_update)
         prngkey, _ = jax.random.split(prngkey)
         state, (loss, loss_dict) = p_step(
             state, 
