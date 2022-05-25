@@ -3,6 +3,7 @@ from jax_a2c.utils import process_rewards
 import jax
 import jax.numpy as jnp
 import numpy as np
+import os
 
 @functools.partial(jax.jit, static_argnums=(1,))
 def repeat(array, K):
@@ -57,7 +58,7 @@ def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_step
                 _, acts = policy_fn(prngkey, ob) 
             
             acts = np.array(acts)
-            for _ in range(1):
+            for _ in range(1 + (os.environ.get('DOUBLE_STEP') is not None)):
                 next_ob, rews, d, info = k_envs.step(acts)
             all_rewards_array[l, slc: slc + num_envs] = rews
             all_ds_array[l + 1, slc: slc + num_envs] = d

@@ -50,9 +50,9 @@ def _worker(remote, k_remotes, parent_remote, spaces, device) -> None:
             k_envs.obs_rms = args.pop('train_obs_rms')
             k_envs.ret_rms = args.pop('train_ret_rms')
             args['policy_fn'] = jax.jit(args['policy_fn'])
-            for _ in range(1):
+            for _ in range(1 + (os.environ.get('DOUBLE_SEND') is not None)):
                 out = km_mc_rollouts_(**args)
-            for _ in range(1):
+            for _ in range(1 + (os.environ.get('DOUBLE_SEND') is not None)):
                 remote.send(out)
         except EOFError:
             break
@@ -171,9 +171,10 @@ def main(args: dict):
     args['train_constants'] = freeze(args['train_constants'])
 
     jit_q_fn = jax.jit(state.q_fn)
+
+    prdict = defaultdict(list)
+
     for current_update in range(start_update, total_updates):
-        
-        prdict = defaultdict(list)
 
         prst = time.time()
         
@@ -184,12 +185,8 @@ def main(args: dict):
             eval_envs.obs_rms = deepcopy(envs.obs_rms)
             _, eval_return = eval(state.apply_fn, state.params['policy_params'], eval_envs)
             print(f'Updates {current_update}/{total_updates}. Eval return: {eval_return}. Epoch_time: {epoch_time}.')
-
-            if args['eval_with_q']:
-                eval_envs.obs_rms = deepcopy(envs.obs_rms)
-                _, q_eval_return = q_eval(state.apply_fn, state.params['policy_params'], 
-                                        state.q_fn, state.params['qf_params'], eval_envs)
-                print(f'Q-eval return: {q_eval_return}')
+            print({k: np.mean(v) for k, v in prdict.items()})
+            prdict = defaultdict(list)
 
         #------------------------------------------------
         #              WORKER ROLLOUTS
@@ -257,7 +254,7 @@ def main(args: dict):
 
             original_experience = stack_experiences(exp_list)
             # not_sampled_exp = stack_experiences(not_sampled_exp_list)
-            for _ in range(1):
+            for _ in range(1 + (os.environ.get('DOUBLE_SEND') is not None)):
                 data_tuple = (
                 original_experience, 
                 jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
@@ -294,7 +291,7 @@ def main(args: dict):
                         firstrandom=True,
                         )
                     remote.send(to_worker)
-                for _ in range(1):
+                for _ in range(1 + (os.environ.get('DOUBLE_SEND') is not None)):
                     negative_exp = jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
                         *[remote.recv() for remote in remotes]
                         )
@@ -317,7 +314,7 @@ def main(args: dict):
                 )
         prdict['mc-rollouts'].append(time.time() - prst)
         prst = time.time()
-        for _ in range(1):
+        for _ in range(1 + (os.environ.get('DOUBLE_TRAIN') is not None)):
             oar = process_rollout_output(state.apply_fn, state.params, data_tuple, args['train_constants'])
             prngkey, _ = jax.random.split(prngkey)
 
