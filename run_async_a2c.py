@@ -1,4 +1,5 @@
 from ast import arg
+from collections import defaultdict
 import functools
 import os
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
@@ -171,6 +172,12 @@ def main(args: dict):
 
     jit_q_fn = jax.jit(state.q_fn)
     for current_update in range(start_update, total_updates):
+        
+        prdict = defaultdict(list)
+
+        prst = time.time()
+        
+
         st = time.time()
         policy_fn = functools.partial(_jit_policy_fn, params=state.params['policy_params'])
         if current_update%args['eval_every']==0:
@@ -187,6 +194,9 @@ def main(args: dict):
         #------------------------------------------------
         #              WORKER ROLLOUTS
         #------------------------------------------------
+        prdict['eval'].append(time.time() - prst)
+        prst = time.time()
+
         if args['type'] != 'standart':
             exp_list = []
             add_args_list = []
@@ -305,6 +315,8 @@ def main(args: dict):
                 experience, 
                 None,
                 )
+        prdict['mc-rollouts'].append(time.time() - prst)
+        prst = time.time()
         for _ in range(1):
             oar = process_rollout_output(state.apply_fn, state.params, data_tuple, args['train_constants'])
             prngkey, _ = jax.random.split(prngkey)
@@ -344,6 +356,10 @@ def main(args: dict):
                 prngkey,
                 constant_params=args['train_constants'],
                 )
+        
+        prdict['steps'].append(time.time() - prst)
+        prst = time.time()
+
         if args['save'] and (current_update % args['save_every']):
             additional = {}
             additional['obs_rms'] = deepcopy(envs.obs_rms)
@@ -368,6 +384,7 @@ def main(args: dict):
             loss_dict['loss'] = loss.item()
             wandb.log({'training/' + k: v for k, v in loss_dict.items()}, step=current_update)
             wandb.log({'q-training/' + k: v for k, v in q_loss_dict.items()}, step=current_update)
+            wandb.log({'prof/' + k: np.mean(v) for k, v in prdict.items()}, step=current_update)
 
 if __name__=='__main__':
 
