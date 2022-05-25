@@ -46,7 +46,8 @@ def _worker(remote, k_remotes, parent_remote, spaces, device) -> None:
     km_mc_rollouts_ = functools.partial(km_mc_rollouts, k_envs=k_envs)
     while True:
         try:
-            args = remote.recv()
+            for _ in range(1 + (os.environ.get('DOUBLE_SEND') is not None)):
+                args = remote.recv()
             k_envs.obs_rms = args.pop('train_obs_rms')
             k_envs.ret_rms = args.pop('train_ret_rms')
             args['policy_fn'] = jax.jit(args['policy_fn'])
@@ -252,7 +253,8 @@ def main(args: dict):
                     train_ret_rms=train_ret_rms,
                     firstrandom=False,
                     )
-                remote.send(to_worker)
+                for _ in range(1 + (os.environ.get('DOUBLE_SEND') is not None)):
+                    remote.send(to_worker)
 
             original_experience = stack_experiences(exp_list)
             # not_sampled_exp = stack_experiences(not_sampled_exp_list)
@@ -292,7 +294,8 @@ def main(args: dict):
                         train_ret_rms=train_ret_rms,
                         firstrandom=True,
                         )
-                    remote.send(to_worker)
+                    for _ in range(1 + (os.environ.get('DOUBLE_SEND') is not None)):
+                        remote.send(to_worker)
                 for _ in range(1 + (os.environ.get('DOUBLE_SEND') is not None)):
                     negative_exp = jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
                         *[remote.recv() for remote in remotes]
