@@ -201,12 +201,13 @@ def main(args: dict):
             for remote in remotes:
 
                 prngkey, _ = jax.random.split(prngkey)
-                next_obs_and_dones, experience = collect_experience(
-                    prngkey, 
-                    next_obs_and_dones, 
-                    envs, 
-                    num_steps=args['num_steps']//args['num_workers'], 
-                    policy_fn=policy_fn,)
+                for _ in range(1 + (os.environ.get('DOUBLE_STEP') is not None)):
+                    next_obs_and_dones, experience = collect_experience(
+                        prngkey, 
+                        next_obs_and_dones, 
+                        envs, 
+                        num_steps=args['num_steps']//args['num_workers'], 
+                        policy_fn=policy_fn,)
                 exp_list.append(experience)
 
 
