@@ -50,8 +50,8 @@ def _worker(remote, k_remotes, parent_remote, spaces, device) -> None:
             k_envs.obs_rms = args.pop('train_obs_rms')
             k_envs.ret_rms = args.pop('train_ret_rms')
             args['policy_fn'] = jax.jit(args['policy_fn'])
-            for _ in range(1 + (os.environ.get('DOUBLE_SEND') is not None)):
-                out = km_mc_rollouts_(**args)
+            # for _ in range(1 + (os.environ.get('DOUBLE_SEND') is not None)):
+            out = km_mc_rollouts_(**args)
             for _ in range(1 + (os.environ.get('DOUBLE_SEND') is not None)):
                 remote.send(out)
         except EOFError:
