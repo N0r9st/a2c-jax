@@ -1,6 +1,7 @@
 from ast import arg
 from collections import defaultdict
 import functools
+from operator import imod
 import os
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 from copy import deepcopy
@@ -26,6 +27,8 @@ from jax_a2c.saving import save_state, load_state
 from flax.core import freeze
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
 
+from jax_a2c.km_mc_traj import repeat as _repeat
+
 POLICY_CLASSES = {
     'DiagGaussianPolicy': DiagGaussianPolicy, 
     'DiagGaussianStateDependentPolicy': DiagGaussianStateDependentPolicy,
@@ -35,7 +38,7 @@ def _policy_fn(prngkey, observation, params, apply_fn, determenistic=False):
     sampled_actions  = means if determenistic else sample_action(prngkey, means, log_stds)
     return values, sampled_actions
 
-def _worker(remote, k_remotes, parent_remote, spaces, device) -> None:
+def _worker(remote, k_remotes, parent_remote, spaces, device, add_args) -> None:
     print('D:', device)
     os.environ['CUDA_VISIBLE_DEVICES'] = str(device)
     parent_remote.close()
@@ -44,15 +47,17 @@ def _worker(remote, k_remotes, parent_remote, spaces, device) -> None:
     k_envs.observation_space, k_envs.action_space = spaces
     k_envs = VecNormalize(k_envs, training=False)
     km_mc_rollouts_ = functools.partial(km_mc_rollouts, k_envs=k_envs)
+
+    _policy_fn = jax.jit(add_args['policy_fn'], static_argnames=('determenistic',))
     while True:
         try:
             for _ in range(1 + (os.environ.get('DOUBLE_SEND') is not None)):
                 args = remote.recv()
             k_envs.obs_rms = args.pop('train_obs_rms')
             k_envs.ret_rms = args.pop('train_ret_rms')
-            args['policy_fn'] = jax.jit(args['policy_fn'])
-            # for _ in range(1 + (os.environ.get('DOUBLE_SEND') is not None)):
-            out = km_mc_rollouts_(**args)
+            # args['policy_fn'] = jax.jit(args['policy_fn'])
+            policy_fn = functools.partial(_policy_fn, **(args.pop('policy_fn')))
+            out = km_mc_rollouts_(policy_fn=policy_fn, **args)
             for _ in range(1 + (os.environ.get('DOUBLE_SEND') is not None)):
                 remote.send(out)
         except EOFError:
@@ -99,20 +104,6 @@ def main(args: dict):
     train_obs_rms = envs.obs_rms
     train_ret_rms = envs.ret_rms
 
-    
-    # -----------------------------------------
-    #            STARTING WORKERS
-    #-----------------------------------------
-    if args['type'] != 'standart':
-        if args['num_workers'] is not None:
-            remotes = run_workers(
-                _worker, 
-                k_envs_fn, 
-                args['num_workers'], 
-                (envs.observation_space, envs.action_space),
-                ctx,
-                split_between_devices=args['split_between_devices'])
-    # ------------------------------------------
 
     policy_model = POLICY_CLASSES[args['policy_type']](
         hidden_sizes=args['hidden_sizes'], 
@@ -141,6 +132,22 @@ def main(args: dict):
 
     next_obs = envs.reset()
     next_obs_and_dones = (next_obs, np.array(next_obs.shape[0]*[False]))
+
+    # -----------------------------------------
+    #            STARTING WORKERS
+    #-----------------------------------------
+    if args['type'] != 'standart':
+        if args['num_workers'] is not None:
+            add_args = {'policy_fn': _apply_policy_fn}
+            remotes = run_workers(
+                _worker, 
+                k_envs_fn, 
+                args['num_workers'], 
+                (envs.observation_space, envs.action_space),
+                ctx,
+                split_between_devices=args['split_between_devices'],
+                add_args=add_args)
+    # ------------------------------------------
 
     if args['load']:
         chkpnt = args['load']
@@ -242,8 +249,11 @@ def main(args: dict):
                     prngkey=prngkey,
                     experience=sampled_exp,
                     gamma=args['gamma'],
-                    policy_fn=functools.partial(
-                        _apply_policy_fn, 
+                    # policy_fn=functools.partial(
+                    #     _apply_policy_fn, 
+                    #     params=state.params['policy_params'], 
+                    #     determenistic=args['km_determenistic']),
+                    policy_fn=dict(
                         params=state.params['policy_params'], 
                         determenistic=args['km_determenistic']),
                     max_steps=args['L'],
@@ -283,8 +293,11 @@ def main(args: dict):
                         prngkey=prngkey,
                         experience=sampled_exp,
                         gamma=args['gamma'],
-                        policy_fn=functools.partial(
-                            _apply_policy_fn, 
+                        # policy_fn=functools.partial(
+                        #     _apply_policy_fn, 
+                        #     params=state.params['policy_params'], 
+                        #     determenistic=args['km_determenistic']),
+                        policy_fn=dict(
                             params=state.params['policy_params'], 
                             determenistic=args['km_determenistic']),
                         max_steps=args['L'],
