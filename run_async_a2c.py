@@ -18,7 +18,7 @@ from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
 from jax_a2c.evaluation import eval, q_eval
 from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy
 from jax_a2c.utils import (Experience, collect_experience, create_train_state, select_random_states,
-                           process_experience, concat_trajectories, 
+                           process_experience, concat_trajectories, process_base_rollout_output,
                            stack_experiences, process_rollout_output,  process_mc_rollout_output)
 from jax_a2c.km_mc_traj import km_mc_rollouts
 from jax_a2c.saving import save_state, load_state
@@ -193,7 +193,8 @@ def main(args: dict):
         if args['type'] != 'standart':
             exp_list = []
             add_args_list = []
-            not_sampled_exp_list = []
+            not_selected_observations_list = []
+            sampled_exp_list = []
             for remote in remotes:
 
                 prngkey, _ = jax.random.split(prngkey)
@@ -214,18 +215,20 @@ def main(args: dict):
                     add_args['advantages'] = advs
                     add_args['sampling_prob_temp'] = args['sampling_prob_temp']
                     
-                sampled_exp, not_sampled_exp = select_random_states(
+                sampled_exp, not_selected_observations = select_random_states(
                     prngkey, args['n_samples']//args['num_workers'], 
                     experience, type=args['sampling_type'], **add_args)
 
-                not_sampled_exp_list.append(not_sampled_exp)
+
+                not_selected_observations_list.append(not_selected_observations)
+                sampled_exp_list.append(sampled_exp)
 
                 add_args_list.append(add_args)
                 sampled_exp = Experience(
                     observations=sampled_exp.observations,
-                    actions=None,# sampled_exp.actions,
-                    rewards=None,# sampled_exp.rewards,
-                    values=None,# sampled_exp.values,
+                    actions=None,
+                    rewards=None,
+                    values=None,
                     dones=sampled_exp.dones,
                     states=sampled_exp.states,
                     next_observations= None,
@@ -249,25 +252,29 @@ def main(args: dict):
 
             original_experience = stack_experiences(exp_list)
             # not_sampled_exp = stack_experiences(not_sampled_exp_list)
-            data_tuple = (
-                original_experience, 
-                jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
-                    *[remote.recv() for remote in remotes]
-                    )
+            mc_experience =  jax.tree_util.tree_map(
+                lambda *dicts: jnp.stack(dicts),
+                *[remote.recv() for remote in remotes],
                 )
+            # data_tuple = (
+            #     original_experience, 
+            #     jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
+            #         *[remote.recv() for remote in remotes]
+            #         )
+            #     )
 
             #----------------------------------------------------------------
             #                       NEGATIVES SAMPLING
             #----------------------------------------------------------------
             
             if args['negative_sampling']:
-                for remote, experience, add_args in zip(remotes, exp_list, add_args_list):
-                    prngkey, _ = jax.random.split(prngkey)
+                for remote, experience, add_args, sampled_exp in zip(remotes, exp_list, add_args_list, sampled_exp_list):
+                    # prngkey, _ = jax.random.split(prngkey)
                         
-                    sampled_exp, not_sampled_exp= select_random_states(
-                        prngkey, 
-                        args['n_samples']//args['num_workers'], 
-                        experience, type=args['sampling_type'], **add_args)
+                    # sampled_exp, not_selected_observations= select_random_states(
+                    #     prngkey, 
+                    #     args['n_samples']//args['num_workers'], 
+                    #     experience, type=args['sampling_type'], **add_args)
                     prngkey, _ = jax.random.split(prngkey)
                     to_worker = dict(
                         prngkey=prngkey,
@@ -294,34 +301,50 @@ def main(args: dict):
             #----------------------------------------------------------------
         else:
             prngkey, _ = jax.random.split(prngkey)
-            next_obs_and_dones, experience = collect_experience(
+            next_obs_and_dones, original_experience = collect_experience(
                 prngkey, 
                 next_obs_and_dones, 
                 envs, 
                 num_steps=args['num_steps'], 
                 policy_fn=policy_fn,)
-            data_tuple = (
-                experience, 
-                None,
-                )
-        
-        oar = process_rollout_output(state.apply_fn, state.params, data_tuple, args['train_constants'])
+            # data_tuple = (
+            #     experience, 
+            #     None,
+            #     )
+        # return 
+        # oar = process_rollout_output(state.apply_fn, state.params, data_tuple, args['train_constants'])
+        # not_sampled_oar = process_base_rollout_output(state.apply_fn, state.params, not_sampled_exp, args['train_constants'])
+        base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
+        mc_oar = process_mc_rollout_output(state.apply_fn, state.params, mc_experience, args['train_constants'])
+
+        oar = dict(
+            observations=jnp.concatenate((base_oar['observations'], mc_oar['observations']), axis=0),
+            actions=jnp.concatenate((base_oar['actions'], mc_oar['actions']), axis=0),
+            returns=jnp.concatenate((base_oar['returns'], mc_oar['returns']), axis=0),
+            )
+
+        not_sampled_observations = jnp.concatenate(not_selected_observations_list, axis=0)
+
         prngkey, _ = jax.random.split(prngkey)
 
-        
+        if args['use_base_traj_for_q']:
+            q_oar = oar
+        else:
+            q_oar = mc_oar
+
         if args['negative_sampling']:
             q_train_oar, q_test_oar = train_test_split(
-                jax.tree_util.tree_map(lambda *dicts: jnp.concatenate(dicts, axis=0),*(oar, negative_oar)),
+                jax.tree_util.tree_map(lambda *dicts: jnp.concatenate(dicts, axis=0),*(q_oar, negative_oar)),
                 prngkey, 
                 args['train_constants']['qf_test_ratio'], 
-                len(oar['observations']) + len(negative_oar['observations']))
+                len(q_oar['observations']) + len(negative_oar['observations']))
 
         else:
             q_train_oar, q_test_oar = train_test_split(
-                oar,
+                q_oar,
                 prngkey, 
                 args['train_constants']['qf_test_ratio'], 
-                len(oar['observations']))
+                len(q_oar['observations']))
 
         args['train_constants'] = args['train_constants'].copy({
             'qf_update_batch_size':args['train_constants']['qf_update_batch_size'],
@@ -338,9 +361,13 @@ def main(args: dict):
                 )
             state = state.replace(step=current_update)
         prngkey, _ = jax.random.split(prngkey)
+        p_train_data_dict = {
+            'oar': oar,
+            'not_sampled_observations': not_sampled_observations,
+            }
         state, (loss, loss_dict) = p_step(
             state, 
-            oar, 
+            p_train_data_dict,
             prngkey,
             constant_params=args['train_constants'],
             )

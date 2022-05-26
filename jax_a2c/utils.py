@@ -331,15 +331,7 @@ def select_experience_random(prngkey, n, experience, replace=False, p=None):
                     states=substract_from_list(experience.states, choices),
                     next_observations=experience.next_observations[choices]
                         )
-    not_selected = Experience(observations=experience.observations[not_selected_indices],
-                    actions=experience.actions[not_selected_indices],
-                    rewards=experience.rewards[not_selected_indices],
-                    values=experience.values[not_selected_indices],
-                    dones=experience.dones[not_selected_indices],
-                    states=substract_from_list(experience.states, not_selected_indices),
-                    next_observations=experience.next_observations[not_selected_indices]
-                        )
-    return selected, not_selected 
+    return selected, experience.observations[not_selected_indices]
 def flatten_list(lst):
     out = []
     for l in lst:
@@ -451,31 +443,20 @@ def process_mc_rollout_output(apply_fn, params, mc_rollouts_exp, constant_params
     )
 
 @functools.partial(jax.jit, static_argnames=('constant_params','apply_fn'))
-def process_mc_rollout_output(apply_fn, params, mc_rollouts_exp, constant_params):
-    mc_rollouts_returns = vmap_process_rewards_with_entropy(
+def process_base_rollout_output(apply_fn, params, orig_exp, constant_params):
+    (observations, 
+    actions, returns_loggrad, _, 
+    next_observations, next_dones, rewards), entropy = process_experience_with_entropy(
+        orig_exp, 
         apply_fn,
         params['policy_params'],
-        mc_rollouts_exp['observations'],
-        mc_rollouts_exp['actions'],
-        mc_rollouts_exp['dones'],
-        mc_rollouts_exp['rewards'],
-        mc_rollouts_exp['bootstrapped'],
-        constant_params['alpha'],
-        constant_params['gamma'],
-        constant_params['entropy'],
-    )
-
-    mc_observations, mc_actions, mc_returns = vmap_process_mc_rollouts(
-        mc_rollouts_exp['observations'],
-        mc_rollouts_exp['actions'],
-        mc_rollouts_returns,
-        constant_params['M']
-    )
-    mc_observations, mc_actions, mc_returns = tuple(map(
-        lambda x: x.reshape((x.shape[0]*x.shape[1],) + x.shape[2:]), (mc_observations, mc_actions, mc_returns)
-    ))
+        lambda_=constant_params['lambda_'], 
+        gamma=constant_params['gamma'],
+        alpha=constant_params['alpha'],
+        entropy=constant_params['entropy'],
+        )
     return dict(
-        observations=mc_observations,
-        actions=mc_actions,
-        returns=mc_returns,
+        observations=observations,
+        actions=actions,
+        returns=returns_loggrad,
     )

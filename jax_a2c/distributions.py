@@ -29,10 +29,24 @@ def evaluate_actions_norm(params, apply_fn, observations, actions, prngkey):
     pre_tanh_logprobs = -(actions-means)**2/(2*stds**2) - jnp.log(2*jnp.pi)/2 - log_stds
     action_logprobs = (pre_tanh_logprobs).sum(axis=-1)
     dist_entropy = (0.5 + 0.5 * jnp.log(2 * jnp.pi) + log_stds).sum(-1).mean()
-    # --------
+    # -------- SAMPLE ----------
     action_samples = sample_action_from_normal(prngkey, means, log_stds)
     pre_tanh_logprobs = -(action_samples-means)**2/(2*stds**2) - jnp.log(2*jnp.pi)/2 - log_stds
     sampled_action_logprobs = (pre_tanh_logprobs).sum(axis=-1)
     # --------
     return action_logprobs, sampled_action_logprobs, values[..., 0], dist_entropy, log_stds, action_samples  
+    
+@functools.partial(jax.jit, static_argnames=('apply_fn', 'K'))
+def sample_acts_for_obs(params, apply_fn, prngkey, observations, K):
+    values, (means, log_stds) = apply_fn({'params': params}, observations)
+
+    log_stds = jnp.concatenate([log_stds]*K, axis=0)
+    means = jnp.concatenate([means]*K, axis=0)
+    values = jnp.concatenate([values]*K, axis=0)
+
+    stds = jnp.exp(log_stds)
+    action_samples = sample_action_from_normal(prngkey, means, log_stds)
+    pre_tanh_logprobs = -(action_samples-means)**2/(2*stds**2) - jnp.log(2*jnp.pi)/2 - log_stds
+    sampled_action_logprobs = (pre_tanh_logprobs).sum(axis=-1)
+    return action_samples, sampled_action_logprobs, values
     

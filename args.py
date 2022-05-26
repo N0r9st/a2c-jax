@@ -72,8 +72,9 @@ def parse_args():
     parser.add_argument('--use-q-tolerance', action='store_true', default=False)
     parser.add_argument('--max-q-tolerance', type=int, default=10)
     parser.add_argument('--full-data-for-q-update', action='store_true', default=False)
-    
+    parser.add_argument('--return-in-remaining', action='store_true', default=False)
 
+    parser.add_argument('--use-base-traj-for-q', action='store_true', default=False)
 
 
     args = parser.parse_args()
@@ -186,6 +187,9 @@ def update(args, cmd_args):
     args['eval_with_q'] = cmd_args.eval_with_q
     args['init_log_std'] = cmd_args.init_log_std
 
+    if not cmd_args.use_samples_for_log_update:
+        raise NotImplementedError
+
     args['train_constants'] = dict(
         value_loss_coef=args['value_loss_coef'], 
         entropy_coef=cmd_args.entropy_coef, 
@@ -208,6 +212,8 @@ def update(args, cmd_args):
         use_q_tolerance=cmd_args.use_q_tolerance,
         max_q_tolerance=cmd_args.max_q_tolerance,
         full_data_for_q_update=cmd_args.full_data_for_q_update,
+        return_in_remaining=cmd_args.return_in_remaining,
+        K=args['K'],
     )
 
     args['sampling_type'] = cmd_args.sampling_type
@@ -217,6 +223,7 @@ def update(args, cmd_args):
     args['km_determenistic'] = cmd_args.km_determenistic
 
     args['negative_sampling'] = cmd_args.negative_sampling
+    args['use_base_traj_for_q'] = cmd_args.use_base_traj_for_q
 
     
     return args
