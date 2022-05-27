@@ -1,5 +1,5 @@
 import argparse
-possible_types = ['sample-KM-rollouts-fast', 'standart']
+possible_types = ['sample-KM-rollouts-fast',]
 possible_q_updates = [None, 'rep', 'log', 'none']
 possible_policy_types = ['DiagGaussianPolicy', 'DiagGaussianStateDependentPolicy']
 possible_sampling_types = ['uniform', 'adv',]
@@ -76,6 +76,8 @@ def parse_args():
 
     parser.add_argument('--use-base-traj-for-q', action='store_true', default=False)
 
+    parser.add_argument('--full-tt-split', action='store_true', default=False, 
+        help="almost separates obs from train and test. If use-base is off - separates fully")
 
     args = parser.parse_args()
     return args
@@ -224,6 +226,7 @@ def update(args, cmd_args):
 
     args['negative_sampling'] = cmd_args.negative_sampling
     args['use_base_traj_for_q'] = cmd_args.use_base_traj_for_q
+    args['full_tt_split'] = cmd_args.full_tt_split
 
     
     return args

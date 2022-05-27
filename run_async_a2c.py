@@ -1,4 +1,3 @@
-from ast import arg
 import functools
 import os
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
@@ -12,7 +11,7 @@ import itertools
 import multiprocessing as mp
 
 from jax_a2c.a2c import p_step
-from jax_a2c.q_updates import q_step, train_test_split, test_qf
+from jax_a2c.q_updates import q_step, train_test_split, test_qf, train_test_split_k_repeat, general_train_test_split
 from jax_a2c.distributions import sample_action_from_normal as sample_action
 from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
 from jax_a2c.evaluation import eval, q_eval
@@ -195,6 +194,9 @@ def main(args: dict):
             add_args_list = []
             not_selected_observations_list = []
             sampled_exp_list = []
+            sampling_masks = []
+            no_sampling_masks = []
+
             for remote in remotes:
 
                 prngkey, _ = jax.random.split(prngkey)
@@ -215,11 +217,12 @@ def main(args: dict):
                     add_args['advantages'] = advs
                     add_args['sampling_prob_temp'] = args['sampling_prob_temp']
                     
-                sampled_exp, not_selected_observations = select_random_states(
+                sampled_exp, not_selected_observations, sampling_mask, no_sampling_mask = select_random_states(
                     prngkey, args['n_samples']//args['num_workers'], 
                     experience, type=args['sampling_type'], **add_args)
 
-
+                sampling_masks.append(sampling_mask)
+                no_sampling_masks.append(no_sampling_mask)
                 not_selected_observations_list.append(not_selected_observations)
                 sampled_exp_list.append(sampled_exp)
 
@@ -251,30 +254,17 @@ def main(args: dict):
                 remote.send(to_worker)
 
             original_experience = stack_experiences(exp_list)
-            # not_sampled_exp = stack_experiences(not_sampled_exp_list)
             mc_experience =  jax.tree_util.tree_map(
                 lambda *dicts: jnp.stack(dicts),
                 *[remote.recv() for remote in remotes],
                 )
-            # data_tuple = (
-            #     original_experience, 
-            #     jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
-            #         *[remote.recv() for remote in remotes]
-            #         )
-            #     )
 
             #----------------------------------------------------------------
             #                       NEGATIVES SAMPLING
             #----------------------------------------------------------------
-            
+            negative_oar = None
             if args['negative_sampling']:
-                for remote, experience, add_args, sampled_exp in zip(remotes, exp_list, add_args_list, sampled_exp_list):
-                    # prngkey, _ = jax.random.split(prngkey)
-                        
-                    # sampled_exp, not_selected_observations= select_random_states(
-                    #     prngkey, 
-                    #     args['n_samples']//args['num_workers'], 
-                    #     experience, type=args['sampling_type'], **add_args)
+                for remote, add_args, sampled_exp in zip(remotes, add_args_list, sampled_exp_list):
                     prngkey, _ = jax.random.split(prngkey)
                     to_worker = dict(
                         prngkey=prngkey,
@@ -307,13 +297,7 @@ def main(args: dict):
                 envs, 
                 num_steps=args['num_steps'], 
                 policy_fn=policy_fn,)
-            # data_tuple = (
-            #     experience, 
-            #     None,
-            #     )
-        # return 
-        # oar = process_rollout_output(state.apply_fn, state.params, data_tuple, args['train_constants'])
-        # not_sampled_oar = process_base_rollout_output(state.apply_fn, state.params, not_sampled_exp, args['train_constants'])
+        
         base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
         mc_oar = process_mc_rollout_output(state.apply_fn, state.params, mc_experience, args['train_constants'])
 
@@ -327,24 +311,17 @@ def main(args: dict):
 
         prngkey, _ = jax.random.split(prngkey)
 
-        if args['use_base_traj_for_q']:
-            q_oar = oar
-        else:
-            q_oar = mc_oar
-
-        if args['negative_sampling']:
-            q_train_oar, q_test_oar = train_test_split(
-                jax.tree_util.tree_map(lambda *dicts: jnp.concatenate(dicts, axis=0),*(q_oar, negative_oar)),
-                prngkey, 
-                args['train_constants']['qf_test_ratio'], 
-                len(q_oar['observations']) + len(negative_oar['observations']))
-
-        else:
-            q_train_oar, q_test_oar = train_test_split(
-                q_oar,
-                prngkey, 
-                args['train_constants']['qf_test_ratio'], 
-                len(q_oar['observations']))
+        q_train_oar, q_test_oar = general_train_test_split(
+            base_oar=base_oar,
+            mc_oar=mc_oar,
+            negative_oar=negative_oar,
+            prngkey=prngkey,
+            test_ratio=args['train_constants']['qf_test_ratio'],
+            k=args['K'],
+            nw=args['num_workers'],
+            use_base_traj_for_q=args['use_base_traj_for_q'],
+            full_tt_split=args['full_tt_split'],
+        )
 
         args['train_constants'] = args['train_constants'].copy({
             'qf_update_batch_size':args['train_constants']['qf_update_batch_size'],

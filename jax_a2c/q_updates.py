@@ -45,9 +45,7 @@ def q_loss_fn(
 def q_step(state, train_oar, test_oar, prngkey,
     constant_params, jit_q_fn, ):
     loss = jnp.array(0)
-    loss_dict = {}
-
-    
+        
     if not constant_params['use_q_tolerance']:
         for _ in range(constant_params['qf_update_epochs']):
             prngkey, _ = jax.random.split(prngkey)
@@ -80,7 +78,6 @@ def q_step(state, train_oar, test_oar, prngkey,
             
             if tolerance > constant_params['max_q_tolerance']:
                 epoch_count = epoch_count - tolerance
-                q_loss_dict['epoch_count'] = jnp.array(epoch_count)
                 state = best_state
                 break
 
@@ -94,6 +91,8 @@ def q_step(state, train_oar, test_oar, prngkey,
                 for batch in batches:
                     state, _ = q_microstep(state, batch, prngkey, constant_params)
                 q_loss_dict = test_qf(prngkey, train_oar, test_oar, jit_q_fn, state.params)
+
+        q_loss_dict['epoch_count'] = jnp.array(epoch_count)
 
     return state, (loss, q_loss_dict)
 
@@ -173,3 +172,124 @@ def train_test_split(oar, prngkey, test_ratio, num_train_samples):
         {k: v[jnp.logical_not(test_mask)] for k, v in oar.items()},
         {k: v[test_mask] for k, v in oar.items()}, 
         )
+
+def train_test_split_k_repeat(oar, prngkey, test_ratio, num_train_samples, k, nw, test_choices=None):
+    """ Unlike train_test_split, splits oar data 
+    """
+    oar = groub_by_repeats(oar, k, nw)
+    num_diff_states = oar['observations'].shape[1]
+
+    num_test = int(num_diff_states*test_ratio)
+
+    if test_choices is None:
+        test_choices = jax.random.choice(prngkey, num_diff_states, shape=(num_test,), replace=False)
+    test_mask = jnp.zeros((num_diff_states,), dtype=bool).at[test_choices].set(True)
+    # oar = {k: jax.random.shuffle(prngkey, v) for k, v in oar.items()}
+    oar_train = {k: v[:, jnp.logical_not(test_mask)] for k, v in oar.items()}
+    oar_test = {k: v[:, test_mask] for k, v in oar.items()}
+    oar_train = jax.tree_util.tree_map(lambda x: x.reshape((x.shape[0]*x.shape[1],) + x.shape[2:]), oar_train)
+    oar_test = jax.tree_util.tree_map(lambda x: x.reshape((x.shape[0]*x.shape[1],) + x.shape[2:]), oar_test)
+    return oar_train, oar_test, test_choices
+
+@functools.partial(jax.jit, static_argnames=('k', 'nw'))
+def groub_by_repeats(oar, k, nw):
+    # oar = jax.tree_util.tree_map(lambda x: x.reshape((nw, k, x.shape[0]//nw//k) + x.shape[1:]), oar)
+    # oar = jax.tree_util.tree_map(lambda x: jnp.swapaxes(x, 0, 1), oar)
+    # oar = jax.tree_util.tree_map(lambda x: x.reshape((k, x.shape[2]*nw,) + x.shape[3:]), oar)
+    oar = jax.tree_util.tree_map(lambda x: group_by_repeats_single(x, k, nw), oar)
+    return oar
+
+@functools.partial(jax.jit, static_argnames=('k', 'nw'))
+def group_by_repeats_single(x, k, nw):
+    x = x.reshape((nw, k, x.shape[0]//nw//k) + x.shape[1:])
+    x = jnp.swapaxes(x, 0, 1)
+    x = x.reshape((k, x.shape[2]*nw,) + x.shape[3:])
+    return x
+
+
+
+def general_train_test_split(
+    base_oar, 
+    mc_oar, 
+    negative_oar, 
+    prngkey, 
+    test_ratio, 
+    k, nw, use_base_traj_for_q, full_tt_split):
+    """
+    flags: use_base_traj_for_q, full_tt_split
+    """
+
+    if full_tt_split:
+
+        q_train_oar, q_test_oar, test_choices = train_test_split_k_repeat(
+            mc_oar,
+            prngkey, 
+            test_ratio, len(mc_oar['observations']), k=k, nw=nw)
+
+        if negative_oar is not None:
+            q_neg_train_oar, q_neg_test_oar, _ = train_test_split_k_repeat(
+                negative_oar,
+                prngkey, 
+                test_ratio, len(negative_oar['observations']), k=k, nw=nw, test_choices=test_choices)
+            q_train_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_train_oar, q_neg_train_oar)
+            q_test_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_test_oar, q_neg_test_oar)
+        if use_base_traj_for_q:
+            q_base_train_oar, q_base_test_oar = train_test_split(
+                base_oar,
+                prngkey, 
+                test_ratio, len(base_oar['observations']),)
+
+            q_train_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_train_oar, q_base_train_oar)
+            q_test_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_test_oar, q_base_test_oar)
+
+    else:
+        q_train_oar, q_test_oar = train_test_split(
+            mc_oar,
+            prngkey, 
+            test_ratio, len(mc_oar['observations']),)
+        if negative_oar is not None:
+            q_neg_train_oar, q_neg_test_oar = train_test_split(
+                negative_oar,
+                prngkey, 
+                test_ratio, len(negative_oar['observations']),)
+            q_train_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_train_oar, q_neg_train_oar)
+            q_test_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_test_oar, q_neg_test_oar)
+        if use_base_traj_for_q:
+            q_base_train_oar, q_base_test_oar = train_test_split(
+                base_oar,
+                prngkey, 
+                test_ratio, len(base_oar['observations']),)
+
+            q_train_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_train_oar, q_base_train_oar)
+            q_test_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_test_oar, q_base_test_oar)
+
+    return q_train_oar, q_test_oar
+
+
+@jax.vmap
+def apply_mask(obs_pack, mask):
+    return obs_pack[mask]
+
+@jax.jit
+@jax.vmap
+def apply_mask_dict(oar_pack, mask):
+    return jax.tree_util.tree_map(lambda x: x[mask], oar_pack)
+
+# @functools.partial(jax.jit, static_argnames=('nw',))
+def train_test_base_separateacts(base_oar, sampling_masks, no_sampling_masks, test_choices, non_test_choices, nw):
+    """ separates base_oar on train and test so no test instances are in test_choices
+    """
+    base_oar = jax.tree_util.tree_map(lambda x: x.reshape((nw, x.shape[0]//nw,) + x.shape[1:]), base_oar)
+    can_use_oar_nonsampled = apply_mask_dict(base_oar, no_sampling_masks)
+    can_oar_sampled = apply_mask_dict(base_oar, sampling_masks)
+
+    # can_use_oar_sampled = apply_mask_dict(can_oar_sampled, non_test_choices)
+    # cant_use_oar = apply_mask_dict(can_oar_sampled, test_choices)
+    can_use_oar_sampled = jax.tree_util.tree_map(lambda x: x[:, non_test_choices], can_oar_sampled)
+    cant_use_oar = jax.tree_util.tree_map(lambda x: x[:, test_choices], can_oar_sampled)
+    
+    can_use_oar_nonsampled = jax.tree_util.tree_map(lambda x: x.reshape(-1, x.shape[-1]), can_use_oar_nonsampled)
+    can_use_oar_sampled = jax.tree_util.tree_map(lambda x: x.reshape(-1, x.shape[-1]), can_use_oar_sampled)
+    cant_use_oar = jax.tree_util.tree_map(lambda x: x.reshape(-1, x.shape[-1]), cant_use_oar)
+    return can_use_oar_nonsampled, can_use_oar_sampled, cant_use_oar
+    
