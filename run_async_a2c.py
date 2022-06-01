@@ -362,7 +362,8 @@ def main(args: dict):
                 'time/timestep': timestep, 
                 'time/updates': current_update, 
                 'time/time': epoch_time,
-                'evaluation/score': eval_return,}, 
+                'evaluation/score': eval_return,
+                'evaluation/train_score': envs.get_last_return().mean()}, 
                 commit=False, step=current_update)
             epoch_times = []
 

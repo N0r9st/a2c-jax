@@ -35,6 +35,8 @@ def _worker(remote, parent_remote, env_fn) -> None:
                 remote.send(env.get_state())
             elif cmd == "get_spaces":
                 remote.send((env.observation_space, env.action_space))
+            elif cmd == "get_last_return":
+                remote.send(env.get_last_return())
             else:
                 raise NotImplementedError(f"`{cmd}` is not implemented in the worker")
         except EOFError:
@@ -98,6 +100,11 @@ class SubprocVecEnv:
     def getattr_depth_check(self, *args, **kwargs):
         return None
 
+    def get_last_return(self,):
+        for remote in self.remotes:
+            remote.send(("get_last_return", None))
+        return np.array([remote.recv() for remote in self.remotes])
+
 def _flatten_obs(obs: List[np.array]) -> np.array:
     stacked = np.stack(obs)
     return stacked
@@ -105,6 +112,7 @@ def _flatten_obs(obs: List[np.array]) -> np.array:
 
 def create_env(name: str = 'HalfCheetah-v3', env_state: Optional[MjSimState] = None, seed=None):
     env = MjTlSavingWrapper(gym.make(name))
+    env = TrackLastReturnsWrapper(env)
     env.reset()
     if env_state:
         env.set_state(env_state)
@@ -183,3 +191,23 @@ def run_workers(worker, k_envs_fn, num_workers, spaces, ctx, split_between_devic
         processes.append(process)
         work_remote.close()
     return remotes
+
+
+class TrackLastReturnsWrapper(gym.Wrapper):
+    def __init__(self, env) -> None:
+        super().__init__(env)
+        self.current_return = 0
+        self.last_full_return = None
+
+    def step(self, action):
+        observation, reward, done, info = self.env.step(action)
+        self.current_return += reward
+        return observation, reward, done, info
+
+    def reset(self):
+        self.last_full_return = self.current_return
+        self.current_return = 0
+        return self.env.reset()
+    
+    def get_last_return(self,):
+        return self.last_full_return
