@@ -36,14 +36,16 @@ def evaluate_actions_norm(params, apply_fn, observations, actions, prngkey):
     # --------
     return action_logprobs, sampled_action_logprobs, values[..., 0], dist_entropy, log_stds, action_samples  
     
-@functools.partial(jax.jit, static_argnames=('apply_fn', 'K'))
-def sample_acts_for_obs(params, apply_fn, prngkey, observations, K):
+@functools.partial(jax.jit, static_argnames=('apply_fn', 'K', 'logstd_stopgrad'))
+def sample_acts_for_obs(params, apply_fn, prngkey, observations, K, logstd_stopgrad):
     values, (means, log_stds) = apply_fn({'params': params}, observations)
+
+    if logstd_stopgrad:
+        log_stds = jax.lax.stop_gradient(log_stds)
 
     log_stds = jnp.concatenate([log_stds]*K, axis=0)
     means = jnp.concatenate([means]*K, axis=0)
     values = jnp.concatenate([values]*K, axis=0)
-
     stds = jnp.exp(log_stds)
     action_samples = sample_action_from_normal(prngkey, means, log_stds)
     pre_tanh_logprobs = -(action_samples-means)**2/(2*stds**2) - jnp.log(2*jnp.pi)/2 - log_stds

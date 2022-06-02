@@ -78,6 +78,8 @@ def parse_args():
 
     parser.add_argument('--full-tt-split', action='store_true', default=False, 
         help="almost separates obs from train and test. If use-base is off - separates fully")
+    parser.add_argument('--logstd-stopgrad', action='store_true', default=False, 
+        help="stops gradient for entropy with Q-updates")
 
     args = parser.parse_args()
     return args
@@ -216,6 +218,7 @@ def update(args, cmd_args):
         full_data_for_q_update=cmd_args.full_data_for_q_update,
         return_in_remaining=cmd_args.return_in_remaining,
         K=args['K'],
+        logstd_stopgrad=cmd_args.logstd_stopgrad,
     )
 
     args['sampling_type'] = cmd_args.sampling_type

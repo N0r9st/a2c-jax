@@ -34,7 +34,7 @@ def p_loss_fn(
         q_observations = data_dict['not_sampled_observations']
         q_action_samples, q_logprobs, q_values = sample_acts_for_obs(
             params['policy_params'], apply_fn, 
-            prngkey, q_observations, constant_params['K'])
+            prngkey, q_observations, constant_params['K'], constant_params['logstd_stopgrad'])
         q_observations = jnp.concatenate([q_observations]*constant_params['K'], axis=0)
     else:
         q_observations = observations
