@@ -18,7 +18,8 @@ from jax_a2c.evaluation import eval, q_eval
 from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy
 from jax_a2c.utils import (Experience, collect_experience, create_train_state, select_random_states,
                            process_experience, concat_trajectories, process_base_rollout_output,
-                           stack_experiences, process_rollout_output,  process_mc_rollout_output)
+                           stack_experiences, process_rollout_output,  process_mc_rollout_output,
+                           calculate_interactions_per_epoch)
 from jax_a2c.km_mc_traj import km_mc_rollouts
 from jax_a2c.saving import save_state, load_state
 from flax.core import freeze
@@ -172,6 +173,8 @@ def main(args: dict):
     args['train_constants'] = freeze(args['train_constants'])
 
     jit_q_fn = jax.jit(state.q_fn)
+
+    interactions_per_epoch = calculate_interactions_per_epoch(args)
     for current_update in range(start_update, total_updates):
         st = time.time()
         policy_fn = functools.partial(_jit_policy_fn, params=state.params['policy_params'])
@@ -299,15 +302,20 @@ def main(args: dict):
                 policy_fn=policy_fn,)
         
         base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
-        mc_oar = process_mc_rollout_output(state.apply_fn, state.params, mc_experience, args['train_constants'])
 
-        oar = dict(
-            observations=jnp.concatenate((base_oar['observations'], mc_oar['observations']), axis=0),
-            actions=jnp.concatenate((base_oar['actions'], mc_oar['actions']), axis=0),
-            returns=jnp.concatenate((base_oar['returns'], mc_oar['returns']), axis=0),
-            )
-
-        not_sampled_observations = jnp.concatenate(not_selected_observations_list, axis=0)
+        if args['type'] != 'standart':
+            mc_oar = process_mc_rollout_output(state.apply_fn, state.params, mc_experience, args['train_constants'])
+            oar = dict(
+                observations=jnp.concatenate((base_oar['observations'], mc_oar['observations']), axis=0),
+                actions=jnp.concatenate((base_oar['actions'], mc_oar['actions']), axis=0),
+                returns=jnp.concatenate((base_oar['returns'], mc_oar['returns']), axis=0),
+                )
+            not_sampled_observations = jnp.concatenate(not_selected_observations_list, axis=0)
+        else:
+            negative_oar = None
+            mc_oar = None
+            oar = base_oar
+            not_sampled_observations = base_oar['observations'].reshape((-1, base_oar['observations'].shape[-1]))
 
         prngkey, _ = jax.random.split(prngkey)
 
@@ -362,6 +370,7 @@ def main(args: dict):
                 'time/timestep': timestep, 
                 'time/updates': current_update, 
                 'time/time': epoch_time,
+                'time/num_interactions': interactions_per_epoch,
                 'evaluation/score': eval_return,
                 'evaluation/train_score': envs.get_last_return().mean()}, 
                 commit=False, step=current_update)

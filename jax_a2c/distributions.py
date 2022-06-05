@@ -38,11 +38,12 @@ def evaluate_actions_norm(params, apply_fn, observations, actions, prngkey):
     
 @functools.partial(jax.jit, static_argnames=('apply_fn', 'K', 'logstd_stopgrad'))
 def sample_acts_for_obs(params, apply_fn, prngkey, observations, K, logstd_stopgrad):
+    print(observations.shape)
     values, (means, log_stds) = apply_fn({'params': params}, observations)
 
     if logstd_stopgrad:
         log_stds = jax.lax.stop_gradient(log_stds)
-
+    print(log_stds.shape)
     log_stds = jnp.concatenate([log_stds]*K, axis=0)
     means = jnp.concatenate([means]*K, axis=0)
     values = jnp.concatenate([values]*K, axis=0)

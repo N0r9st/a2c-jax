@@ -218,14 +218,18 @@ def general_train_test_split(
     """
     flags: use_base_traj_for_q, full_tt_split
     """
-
+    if mc_oar is None:
+        q_train_oar, q_test_oar = train_test_split(
+                base_oar,
+                prngkey, 
+                test_ratio, len(base_oar['observations']),)
+        return q_train_oar, q_test_oar
+        
     if full_tt_split:
-
         q_train_oar, q_test_oar, test_choices = train_test_split_k_repeat(
             mc_oar,
             prngkey, 
             test_ratio, len(mc_oar['observations']), k=k, nw=nw)
-
         if negative_oar is not None:
             q_neg_train_oar, q_neg_test_oar, _ = train_test_split_k_repeat(
                 negative_oar,
@@ -238,10 +242,8 @@ def general_train_test_split(
                 base_oar,
                 prngkey, 
                 test_ratio, len(base_oar['observations']),)
-
             q_train_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_train_oar, q_base_train_oar)
             q_test_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_test_oar, q_base_test_oar)
-
     else:
         q_train_oar, q_test_oar = train_test_split(
             mc_oar,
@@ -259,7 +261,6 @@ def general_train_test_split(
                 base_oar,
                 prngkey, 
                 test_ratio, len(base_oar['observations']),)
-
             q_train_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_train_oar, q_base_train_oar)
             q_test_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_test_oar, q_base_test_oar)
 

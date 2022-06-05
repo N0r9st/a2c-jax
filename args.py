@@ -1,5 +1,5 @@
 import argparse
-possible_types = ['sample-KM-rollouts-fast',]
+possible_types = ['sample-KM-rollouts-fast', 'standart']
 possible_q_updates = [None, 'rep', 'log', 'none']
 possible_policy_types = ['DiagGaussianPolicy', 'DiagGaussianStateDependentPolicy']
 possible_sampling_types = ['uniform', 'adv',]
@@ -140,10 +140,10 @@ def update(args, cmd_args):
     args['L'] = cmd_args.L
     args['M'] = cmd_args.M
 
-    if args['type']=='standart':
-        args['K'] = 0
-        args['L'] = 0
-        args['M'] = 0
+    # if args['type']=='standart':
+    #     args['K'] = 0
+    #     args['L'] = 0
+    #     args['M'] = 0
 
     if args['type']=='K-rollouts':
         args['M'] = 1

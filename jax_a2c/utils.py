@@ -448,3 +448,14 @@ def process_base_rollout_output(apply_fn, params, orig_exp, constant_params):
         actions=actions,
         returns=returns_loggrad,
     )
+
+def calculate_interactions_per_epoch(args):
+    num_interactions = args['num_envs'] * args['num_envs'], 
+    if args['type'] == 'standart':
+        return num_interactions
+    else:
+        num_interactions += args['n_samples'] * args['K'] * args['M'] * args['L']
+        if args['negative_sampling']:
+            num_interactions += args['n_samples'] * args['K'] * args['M'] * args['L']
+
+    return num_interactions
