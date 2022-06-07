@@ -65,7 +65,7 @@ def p_loss_fn(
         q_estimated_advantages = q_sampled_estimations - q_values
 
         qp_loss = - (jax.lax.stop_gradient(q_estimated_advantages) * q_logprobs).mean()
-
+    
     loss = constant_params['value_loss_coef']*value_loss + policy_loss - constant_params['entropy_coef']*dist_entropy + \
         constant_params['q_loss_coef'] * qp_loss
 

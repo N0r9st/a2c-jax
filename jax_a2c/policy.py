@@ -41,7 +41,7 @@ class DiagGaussianPolicy(nn.Module):
         action_log_stds = jnp.asarray(action_log_stds)
         action_log_stds = jnp.repeat(action_log_stds.reshape(1,-1), axis=0, repeats=x.shape[0])
         action_log_stds = jnp.clip(action_log_stds, a_min=LOG_SIG_MIN, a_max=LOG_SIG_MAX)
-        return values, (action_means, action_log_stds)
+        return values[..., 0], (action_means, action_log_stds)
 
 class QFunction(nn.Module):
     """ MLP-based Q-function approximator

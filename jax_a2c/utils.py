@@ -113,7 +113,7 @@ def collect_experience(
         observations_list.append(observations)
         actions_list.append(np.array(actions))
         rewards_list.append(rewards)
-        values_list.append(values[..., 0])
+        values_list.append(values)
         dones_list.append(dones)
         states_list.append(envs.get_state())
         next_observations_list.append(next_observations)
@@ -122,7 +122,7 @@ def collect_experience(
 
     _, prngkey = jax.random.split(prngkey)
     values, actions = policy_fn(prngkey, next_observations) 
-    values_list.append(values[..., 0])
+    values_list.append(values)
 
     experience = Experience(
         observations=np.stack(observations_list),
@@ -450,7 +450,7 @@ def process_base_rollout_output(apply_fn, params, orig_exp, constant_params):
     )
 
 def calculate_interactions_per_epoch(args):
-    num_interactions = args['num_envs'] * args['num_envs'], 
+    num_interactions = args['num_envs'] * args['num_envs']
     if args['type'] == 'standart':
         return num_interactions
     else:

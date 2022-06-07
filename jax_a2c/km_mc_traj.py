@@ -69,13 +69,12 @@ def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_step
         
         bootstrapped_values, _ = policy_fn(prngkey, next_ob) # ???
         all_boot_list.append(bootstrapped_values)
-    
     rollout_data = dict(
         observations=all_obs_array,
         next_observations=all_next_obs_array,
         actions=all_act_array,
         dones=all_ds_array,
         rewards=all_rewards_array,
-        bootstrapped=jnp.concatenate(all_boot_list)[..., 0], # (1, in_states)
+        bootstrapped=jnp.concatenate(all_boot_list), # (1, in_states)
         )
     return rollout_data
