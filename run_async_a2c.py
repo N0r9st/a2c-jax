@@ -342,7 +342,7 @@ def main(args: dict):
                     test_ratio=args['train_constants']['qf_test_ratio'],
                     k=args['K'],
                     nw=args['num_workers'],
-                    use_base_traj_for_q=args['use_base_traj_for_q'],
+                    use_base_traj_for_q=base_traj,
                     full_tt_split=args['full_tt_split'],
                 )
 
