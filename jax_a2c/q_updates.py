@@ -162,9 +162,10 @@ def test_qf(prngkey, train_oar, test_oar, q_fn, params):
 
     )
 
-# @functools.partial(jax.jit,static_argnums=(2,3))
+# @functools.partial(jax.jit, static_argnames=("num_train_samples", "test_ratio"))
 def train_test_split(oar, prngkey, test_ratio, num_train_samples):
-    num_test = int(num_train_samples*test_ratio)
+    # num_test = int(num_train_samples*test_ratio)
+    num_test = 10
     test_choices = jax.random.choice(prngkey, num_train_samples, shape=(num_test,), replace=False)
     test_mask = jnp.zeros((num_train_samples,), dtype=bool).at[test_choices].set(True)
     # oar = {k: jax.random.shuffle(prngkey, v) for k, v in oar.items()}
@@ -207,7 +208,7 @@ def group_by_repeats_single(x, k, nw):
     return x
 
 
-
+# @functools.partial(jax.jit, static_argnames=("k", "nw", "test_ratio", "use_base_traj_for_q", "full_tt_split"))
 def general_train_test_split(
     base_oar, 
     mc_oar, 

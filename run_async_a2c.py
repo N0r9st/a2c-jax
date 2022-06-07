@@ -1,29 +1,36 @@
 import functools
 import os
+
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
-from copy import deepcopy
+import itertools
+import multiprocessing as mp
 import time
+from copy import deepcopy
+
 import jax
 import jax.numpy as jnp
 import numpy as np
-import wandb
-import itertools
-import multiprocessing as mp
-
-from jax_a2c.a2c import p_step
-from jax_a2c.q_updates import q_step, train_test_split, test_qf, train_test_split_k_repeat, general_train_test_split
-from jax_a2c.distributions import sample_action_from_normal as sample_action
-from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
-from jax_a2c.evaluation import eval, q_eval
-from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy
-from jax_a2c.utils import (Experience, collect_experience, create_train_state, select_random_states,
-                           process_experience, concat_trajectories, process_base_rollout_output,
-                           stack_experiences, process_rollout_output,  process_mc_rollout_output,
-                           calculate_interactions_per_epoch)
-from jax_a2c.km_mc_traj import km_mc_rollouts
-from jax_a2c.saving import save_state, load_state
 from flax.core import freeze
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
+
+import wandb
+from jax_a2c.a2c import p_step
+from jax_a2c.distributions import sample_action_from_normal as sample_action
+from jax_a2c.env_utils import DummySubprocVecEnv, make_vec_env, run_workers
+from jax_a2c.evaluation import eval, q_eval
+from jax_a2c.km_mc_traj import km_mc_rollouts
+from jax_a2c.policy import (DiagGaussianPolicy,
+                            DiagGaussianStateDependentPolicy, QFunction)
+from jax_a2c.q_updates import (general_train_test_split, groub_by_repeats,
+                               q_step, test_qf, train_test_split,
+                               train_test_split_k_repeat)
+from jax_a2c.saving import load_state, save_state
+from jax_a2c.utils import (Experience, calculate_interactions_per_epoch,
+                           collect_experience, concat_trajectories,
+                           create_train_state, process_base_rollout_output,
+                           process_experience, process_mc_rollout_output,
+                           process_rollout_output, select_random_states,
+                           stack_experiences)
 
 POLICY_CLASSES = {
     'DiagGaussianPolicy': DiagGaussianPolicy, 
@@ -318,33 +325,43 @@ def main(args: dict):
             not_sampled_observations = base_oar['observations'].reshape((-1, base_oar['observations'].shape[-1]))
 
         prngkey, _ = jax.random.split(prngkey)
+        for n_samples_slice in [4, 16, 32, 64,]:
+            for base_traj in [False, True]:
+                mc_oar_ = groub_by_repeats(mc_oar, args['K'], args['num_workers'])
 
-        q_train_oar, q_test_oar = general_train_test_split(
-            base_oar=base_oar,
-            mc_oar=mc_oar,
-            negative_oar=negative_oar,
-            prngkey=prngkey,
-            test_ratio=args['train_constants']['qf_test_ratio'],
-            k=args['K'],
-            nw=args['num_workers'],
-            use_base_traj_for_q=args['use_base_traj_for_q'],
-            full_tt_split=args['full_tt_split'],
-        )
+                def _slice_grouped_mc_oar(arr):
+                    arr = arr[:, :n_samples_slice, ...]
+                    return arr.reshape((arr.shape[0]*arr.shape[1],) + arr.shape[2:])
+                mc_oar_ = jax.tree_util.tree_map(_slice_grouped_mc_oar, mc_oar_)
 
-        args['train_constants'] = args['train_constants'].copy({
-            'qf_update_batch_size':args['train_constants']['qf_update_batch_size'],
-            'q_train_len':len(q_train_oar['observations']),
-            })
-        
-        if args['train_constants']['q_updates'] != 'none':
-            state, (q_loss, q_loss_dict) = q_step(
-                state, 
-                # trajectories, 
-                q_train_oar, q_test_oar, # (Experience(original trajectory), List[dicts](kml trajs))
-                prngkey,
-                constant_params=args['train_constants'], jit_q_fn=jit_q_fn
+                q_train_oar, q_test_oar = general_train_test_split(
+                    base_oar=base_oar,
+                    mc_oar=mc_oar_,
+                    negative_oar=negative_oar,
+                    prngkey=prngkey,
+                    test_ratio=args['train_constants']['qf_test_ratio'],
+                    k=args['K'],
+                    nw=args['num_workers'],
+                    use_base_traj_for_q=args['use_base_traj_for_q'],
+                    full_tt_split=args['full_tt_split'],
                 )
-            state = state.replace(step=current_update)
+
+                args['train_constants'] = args['train_constants'].copy({
+                    'qf_update_batch_size':args['train_constants']['qf_update_batch_size'],
+                    'q_train_len':len(q_train_oar['observations']),
+                    })
+
+                state_qupdated, (q_loss, q_loss_dict) = q_step(
+                    state, 
+                    # trajectories, 
+                    q_train_oar, q_test_oar, # (Experience(original trajectory), List[dicts](kml trajs))
+                    prngkey,
+                    constant_params=args['train_constants'], jit_q_fn=jit_q_fn
+                    )
+                state_qupdated = state_qupdated.replace(step=current_update)
+                wandb.log({f'q-training-{n_samples_slice}-b{base_traj}/' + k: v for k, v in q_loss_dict.items()}, step=current_update)
+
+        state = state_qupdated
         prngkey, _ = jax.random.split(prngkey)
         p_train_data_dict = {
             'oar': oar,
