@@ -325,7 +325,7 @@ def main(args: dict):
             not_sampled_observations = base_oar['observations'].reshape((-1, base_oar['observations'].shape[-1]))
 
         prngkey, _ = jax.random.split(prngkey)
-        for n_samples_slice in [4, 16, 32, 64,]:
+        for n_samples_slice in [16, 32, 64, 128, 256]:
             for base_traj in [False, True]:
                 mc_oar_ = groub_by_repeats(mc_oar, args['K'], args['num_workers'])
 
