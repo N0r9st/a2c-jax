@@ -370,7 +370,7 @@ def main(args: dict):
                 'time/timestep': timestep, 
                 'time/updates': current_update, 
                 'time/time': epoch_time,
-                'time/num_interactions': interactions_per_epoch,
+                'time/num_interactions': interactions_per_epoch * current_update,
                 'evaluation/score': eval_return,
                 'evaluation/train_score': envs.get_last_return().mean()}, 
                 commit=False, step=current_update)
