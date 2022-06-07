@@ -359,7 +359,7 @@ def main(args: dict):
                     constant_params=args['train_constants'], jit_q_fn=jit_q_fn
                     )
                 state_qupdated = state_qupdated.replace(step=current_update)
-                wandb.log({f'q-training-{n_samples_slice}-b{base_traj}/' + k: v for k, v in q_loss_dict.items()}, step=current_update)
+                wandb.log({f'q-training-{n_samples_slice}-b{base_traj}/' + k: v.item() for k, v in q_loss_dict.items()}, step=current_update)
 
         state = state_qupdated
         prngkey, _ = jax.random.split(prngkey)
