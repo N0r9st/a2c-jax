@@ -81,6 +81,9 @@ def parse_args():
     parser.add_argument('--logstd-stopgrad', action='store_true', default=False, 
         help="stops gradient for entropy with Q-updates")
 
+    parser.add_argument('--equal-importance-ploss', action='store_true', default=False, 
+        help="calculate policy loss when returns from q-function are counted as equals to the env returns")
+
     args = parser.parse_args()
     return args
 
@@ -219,6 +222,7 @@ def update(args, cmd_args):
         return_in_remaining=cmd_args.return_in_remaining,
         K=args['K'],
         logstd_stopgrad=cmd_args.logstd_stopgrad,
+        equal_importance_ploss=cmd_args.equal_importance_ploss,
     )
 
     args['sampling_type'] = cmd_args.sampling_type

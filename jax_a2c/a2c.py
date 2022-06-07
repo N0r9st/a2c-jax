@@ -48,8 +48,11 @@ def p_loss_fn(
     #               BASIC UPDATE
     #----------------------------------------
     loss_dict = {}
+    if constant_params['equal_importance_ploss']:
+        policy_loss = - (advantages * action_logprobs)
+    else:
+        policy_loss = - (advantages * action_logprobs).mean()
 
-    policy_loss = - (advantages * action_logprobs).mean()
     value_loss = ((returns - values)**2).mean()
     qp_loss = jnp.array(0)
     if constant_params['q_updates'] == 'rep':
@@ -64,10 +67,16 @@ def p_loss_fn(
         q_sampled_estimations = q_fn({'params': params['qf_params']}, q_observations, q_action_samples)
         q_estimated_advantages = q_sampled_estimations - q_values
 
-        qp_loss = - (jax.lax.stop_gradient(q_estimated_advantages) * q_logprobs).mean()
+        if constant_params['equal_importance_ploss']:
+            qp_loss = - constant_params['q_loss_coef'] * (jax.lax.stop_gradient(q_estimated_advantages) * q_logprobs)
+            policy_loss = jnp.concatenate([policy_loss, qp_loss])
+        else:
+            policy_loss += - constant_params['q_loss_coef'] * \
+                (jax.lax.stop_gradient(q_estimated_advantages) * q_logprobs).mean()
     
-    loss = constant_params['value_loss_coef']*value_loss + policy_loss - constant_params['entropy_coef']*dist_entropy + \
-        constant_params['q_loss_coef'] * qp_loss
+    if constant_params['equal_importance_ploss']:
+        policy_loss = policy_loss.mean()
+    loss = constant_params['value_loss_coef']*value_loss + policy_loss - constant_params['entropy_coef'] * dist_entropy
 
     loss_dict.update(
         value_loss=value_loss, 
