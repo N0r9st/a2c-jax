@@ -325,7 +325,7 @@ def main(args: dict):
             not_sampled_observations = base_oar['observations'].reshape((-1, base_oar['observations'].shape[-1]))
 
         prngkey, _ = jax.random.split(prngkey)
-        for n_samples_slice in [16, 32, 64, 128, 256]:
+        for n_samples_slice in [1, 2, 4, 8, 16, 32]:
             for base_traj in [False, True]:
                 for k_slice in [16]:
                     for negative_oar_ in [None]:
@@ -373,7 +373,7 @@ def main(args: dict):
 
         for n_samples_slice in [256]:
             for base_traj in [False, True]:
-                for k_slice in [2,4,8,]:
+                for k_slice in [1,2,]:
                     for negative_oar_ in [None]:
                         # print(f'{n_samples_slice}-b{base_traj}-k{k_slice}--------------------')
                         
