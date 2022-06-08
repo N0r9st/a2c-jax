@@ -327,40 +327,98 @@ def main(args: dict):
         prngkey, _ = jax.random.split(prngkey)
         for n_samples_slice in [16, 32, 64, 128, 256]:
             for base_traj in [False, True]:
-                mc_oar_ = groub_by_repeats(mc_oar, args['K'], args['num_workers'])
+                for k_slice in [16]:
+                    for negative_oar_ in [None]:
+                        # print(f'{n_samples_slice}-b{base_traj}-k{k_slice}--------------------')
+                        
+                        mc_oar_ = groub_by_repeats(mc_oar, args['K'], args['num_workers'])
+                        # [print(k, v.shape) for k,v in mc_oar_.items()]
+                        def _slice_grouped_mc_oar(arr):
+                            arr = arr[:k_slice, :n_samples_slice, ...]
+                            return arr.reshape((arr.shape[0]*arr.shape[1],) + arr.shape[2:])
+                        mc_oar_ = jax.tree_util.tree_map(_slice_grouped_mc_oar, mc_oar_)
+                        # [print(k, v.shape) for k,v in mc_oar_.items()]
+                        q_train_oar, q_test_oar = general_train_test_split(
+                            base_oar=base_oar,
+                            mc_oar=mc_oar_,
+                            negative_oar=negative_oar_,
+                            prngkey=prngkey,
+                            test_ratio=args['train_constants']['qf_test_ratio'],
+                            k=k_slice,
+                            nw=args['num_workers'],
+                            use_base_traj_for_q=base_traj,
+                            full_tt_split=args['full_tt_split'],
+                        )
+                        
+                        # [print('train_', k, v.shape) for k,v in q_train_oar.items()]
+                        # [print('test_', k, v.shape) for k,v in q_test_oar.items()]
 
-                def _slice_grouped_mc_oar(arr):
-                    arr = arr[:, :n_samples_slice, ...]
-                    return arr.reshape((arr.shape[0]*arr.shape[1],) + arr.shape[2:])
-                mc_oar_ = jax.tree_util.tree_map(_slice_grouped_mc_oar, mc_oar_)
+                        args['train_constants'] = args['train_constants'].copy({
+                            'qf_update_batch_size':args['train_constants']['qf_update_batch_size'],
+                            'q_train_len':len(q_train_oar['observations']),
+                            })
 
-                q_train_oar, q_test_oar = general_train_test_split(
-                    base_oar=base_oar,
-                    mc_oar=mc_oar_,
-                    negative_oar=negative_oar,
-                    prngkey=prngkey,
-                    test_ratio=args['train_constants']['qf_test_ratio'],
-                    k=args['K'],
-                    nw=args['num_workers'],
-                    use_base_traj_for_q=base_traj,
-                    full_tt_split=args['full_tt_split'],
-                )
+                        state_qupdated, (q_loss, q_loss_dict) = q_step(
+                            state, 
+                            # trajectories, 
+                            q_train_oar, q_test_oar, # (Experience(original trajectory), List[dicts](kml trajs))
+                            prngkey,
+                            constant_params=args['train_constants'], jit_q_fn=jit_q_fn
+                            )
+                        state_qupdated = state_qupdated.replace(step=current_update)
+                        wandb.log({f'q-training-{n_samples_slice}-b{base_traj}-k{k_slice}/' + k: v.item() \
+                            for k, v in q_loss_dict.items()}, step=current_update)
+                        wandb.log({f'q-training-{n_samples_slice}-b{base_traj}-k{k_slice}/' + \
+                            'ndata': len(q_train_oar['observations'])}, step=current_update)
 
-                args['train_constants'] = args['train_constants'].copy({
-                    'qf_update_batch_size':args['train_constants']['qf_update_batch_size'],
-                    'q_train_len':len(q_train_oar['observations']),
-                    })
+        for n_samples_slice in [256]:
+            for base_traj in [False, True]:
+                for k_slice in [2,4,8,]:
+                    for negative_oar_ in [None]:
+                        # print(f'{n_samples_slice}-b{base_traj}-k{k_slice}--------------------')
+                        
+                        mc_oar_ = groub_by_repeats(mc_oar, args['K'], args['num_workers'])
+                        # [print(k, v.shape) for k,v in mc_oar_.items()]
+                        def _slice_grouped_mc_oar(arr):
+                            arr = arr[:k_slice, :n_samples_slice, ...]
+                            return arr.reshape((arr.shape[0]*arr.shape[1],) + arr.shape[2:])
+                        mc_oar_ = jax.tree_util.tree_map(_slice_grouped_mc_oar, mc_oar_)
+                        # [print(k, v.shape) for k,v in mc_oar_.items()]
+                        q_train_oar, q_test_oar = general_train_test_split(
+                            base_oar=base_oar,
+                            mc_oar=mc_oar_,
+                            negative_oar=negative_oar_,
+                            prngkey=prngkey,
+                            test_ratio=args['train_constants']['qf_test_ratio'],
+                            k=k_slice,
+                            nw=args['num_workers'],
+                            use_base_traj_for_q=base_traj,
+                            full_tt_split=args['full_tt_split'],
+                        )
+                        
+                        # [print('train_', k, v.shape) for k,v in q_train_oar.items()]
+                        # [print('test_', k, v.shape) for k,v in q_test_oar.items()]
 
-                state_qupdated, (q_loss, q_loss_dict) = q_step(
-                    state, 
-                    # trajectories, 
-                    q_train_oar, q_test_oar, # (Experience(original trajectory), List[dicts](kml trajs))
-                    prngkey,
-                    constant_params=args['train_constants'], jit_q_fn=jit_q_fn
-                    )
-                state_qupdated = state_qupdated.replace(step=current_update)
-                wandb.log({f'q-training-{n_samples_slice}-b{base_traj}/' + k: v.item() for k, v in q_loss_dict.items()}, step=current_update)
+                        args['train_constants'] = args['train_constants'].copy({
+                            'qf_update_batch_size':args['train_constants']['qf_update_batch_size'],
+                            'q_train_len':len(q_train_oar['observations']),
+                            })
 
+                        state_qupdated, (q_loss, q_loss_dict) = q_step(
+                            state, 
+                            # trajectories, 
+                            q_train_oar, q_test_oar, # (Experience(original trajectory), List[dicts](kml trajs))
+                            prngkey,
+                            constant_params=args['train_constants'], jit_q_fn=jit_q_fn
+                            )
+                        state_qupdated = state_qupdated.replace(step=current_update)
+                        wandb.log({f'q-training-{n_samples_slice}-b{base_traj}-k{k_slice}/' + k: v.item() \
+                            for k, v in q_loss_dict.items()}, step=current_update)
+
+                        wandb.log({f'q-training-{n_samples_slice}-b{base_traj}-k{k_slice}/' + \
+                            'ndata': len(q_train_oar['observations'])}, step=current_update)
+
+        # exit()
         state = state_qupdated
         prngkey, _ = jax.random.split(prngkey)
         p_train_data_dict = {
