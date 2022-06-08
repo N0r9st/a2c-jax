@@ -70,6 +70,7 @@ def q_step(state, train_oar, test_oar, prngkey,
 
             q_loss_dict = test_qf(prngkey, train_oar, test_oar, jit_q_fn, state.params)
             if q_loss_dict['q_test_loss'] < min_test_loss:
+                best_q_loss_dict = q_loss_dict
                 best_state = state
                 min_test_loss = q_loss_dict['q_test_loss'] 
                 tolerance = 0
@@ -79,6 +80,7 @@ def q_step(state, train_oar, test_oar, prngkey,
             if tolerance > constant_params['max_q_tolerance']:
                 epoch_count = epoch_count - tolerance
                 state = best_state
+                q_loss_dict = best_q_loss_dict
                 break
 
         if constant_params['full_data_for_q_update']:
@@ -90,7 +92,7 @@ def q_step(state, train_oar, test_oar, prngkey,
                     prngkey, constant_params['q_train_len'])
                 for batch in batches:
                     state, _ = q_microstep(state, batch, prngkey, constant_params)
-                q_loss_dict = test_qf(prngkey, train_oar, test_oar, jit_q_fn, state.params)
+                # q_loss_dict = test_qf(prngkey, train_oar, test_oar, jit_q_fn, state.params)
 
         q_loss_dict['epoch_count'] = jnp.array(epoch_count)
 
