@@ -269,7 +269,7 @@ def general_train_test_split(
         not_taken_base_oar, q_test_oar = train_test_split(
             masked_base_oar,
             prngkey, 
-            test_ratio, len(mc_oar['observations']),num_test=int(test_ratio*len(base_oar['observations'])))
+            test_ratio, len(masked_base_oar['observations']), num_test=int(test_ratio*len(masked_base_oar['observations'])))
         q_train_oar = mc_oar
         if negative_oar is not None:
             q_train_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_train_oar, negative_oar)
