@@ -318,17 +318,20 @@ def main(args: dict):
             not_sampled_observations = base_oar['observations'].reshape((-1, base_oar['observations'].shape[-1]))
 
         prngkey, _ = jax.random.split(prngkey)
-
         q_train_oar, q_test_oar = general_train_test_split(
             base_oar=base_oar,
             mc_oar=mc_oar,
             negative_oar=negative_oar,
+            no_sampling_masks=jnp.stack(no_sampling_mask),
             prngkey=prngkey,
             test_ratio=args['train_constants']['qf_test_ratio'],
             k=args['K'],
             nw=args['num_workers'],
+            num_steps=args['num_steps'],
+            num_envs=args['num_envs'],
             use_base_traj_for_q=args['use_base_traj_for_q'],
             full_tt_split=args['full_tt_split'],
+            new_full_tt_split=args['new_full_tt_split'],            
         )
 
         args['train_constants'] = args['train_constants'].copy({
