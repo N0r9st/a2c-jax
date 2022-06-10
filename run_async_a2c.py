@@ -345,43 +345,47 @@ def main(args: dict):
 
         negative_oar = None
 
-        for k_slc in [2,4,8,]:
-            sliced_k_mc_oar = jax.tree_util.tree_map(
-                lambda x: x[:k_slc],
-                k_grouped_mc_oar
-            )
-            sliced_k_mc_oar = jax.tree_util.tree_map(
-                lambda x: x.reshape((x.shape[0]*x.shape[1],) + x.shape[2:]),
-                sliced_k_mc_oar
-            )
+        for k_slc in [2,4,8, 16]:
+            for n_s_slc in [1,2,4]:
+                sliced_k_mc_oar = jax.tree_util.tree_map(
+                    lambda x: x[:k_slc],
+                    k_grouped_mc_oar
+                )
+                sliced_k_mc_oar = jax.tree_util.tree_map(
+                    lambda x: x.reshape((x.shape[0]*x.shape[1],) + x.shape[2:]),
+                    sliced_k_mc_oar
+                )
+                sliced_k_mc_oar = jax.tree_util.tree_map(
+                    lambda x: x[::n_s_slc],
+                    sliced_k_mc_oar
+                )
+                sliced_k_mc_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), sliced_k_mc_oar, takenfork_base_oar)
 
-            sliced_k_mc_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), sliced_k_mc_oar, takenfork_base_oar)
+                for base_flag in [False, True]:
+                    if base_flag:
+                        q_train_oar = jax.tree_util.tree_map(
+                            lambda *x: jnp.concatenate(x, axis=0), 
+                            sliced_k_mc_oar, not_taken_base_oar)
+                    else:
+                        q_train_oar = sliced_k_mc_oar
 
-            for base_flag in [False, True]:
-                if base_flag:
-                    q_train_oar = jax.tree_util.tree_map(
-                        lambda *x: jnp.concatenate(x, axis=0), 
-                        sliced_k_mc_oar, not_taken_base_oar)
-                else:
-                    q_train_oar = sliced_k_mc_oar
+                    args['train_constants'] = args['train_constants'].copy({
+                        'qf_update_batch_size':args['train_constants']['qf_update_batch_size'],
+                        'q_train_len':len(q_train_oar['observations']),
+                        })
 
-                args['train_constants'] = args['train_constants'].copy({
-                    'qf_update_batch_size':args['train_constants']['qf_update_batch_size'],
-                    'q_train_len':len(q_train_oar['observations']),
-                    })
+                    state_, (q_loss, q_loss_dict) = q_step(
+                        state, 
+                        # trajectories, 
+                        q_train_oar, q_test_oar, # (Experience(original trajectory), List[dicts](kml trajs))
+                        prngkey,
+                        constant_params=args['train_constants'], jit_q_fn=jit_q_fn
+                        )
+                    state_ = state_.replace(step=current_update)
 
-                state_, (q_loss, q_loss_dict) = q_step(
-                    state, 
-                    # trajectories, 
-                    q_train_oar, q_test_oar, # (Experience(original trajectory), List[dicts](kml trajs))
-                    prngkey,
-                    constant_params=args['train_constants'], jit_q_fn=jit_q_fn
-                    )
-                state_ = state_.replace(step=current_update)
-
-                wandb.log({f'q-k{k_slc}-b{base_flag}/' + k: v.item() for k, v in q_loss_dict.items()}, step=current_update)
-                wandb.log({f'q-k{k_slc}-b{base_flag}/train_num': len(q_train_oar['observations'])}, step=current_update)
-                wandb.log({f'q-k{k_slc}-b{base_flag}/test_num': len(q_test_oar['observations'])}, step=current_update)
+                    wandb.log({f'q-k{k_slc}-b{base_flag}-nss{n_s_slc}/' + k: v.item() for k, v in q_loss_dict.items()}, step=current_update)
+                    wandb.log({f'q-k{k_slc}-b{base_flag}-nss{n_s_slc}/train_num': len(q_train_oar['observations'])}, step=current_update)
+                    wandb.log({f'q-k{k_slc}-b{base_flag}-nss{n_s_slc}/test_num': len(q_test_oar['observations'])}, step=current_update)
 
         state = state_
         #-------------------------------------------------------
