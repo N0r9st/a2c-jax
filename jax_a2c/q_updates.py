@@ -231,6 +231,7 @@ def general_train_test_split(
     base_oar, 
     mc_oar, 
     negative_oar, 
+    sampling_masks,
     no_sampling_masks,
     prngkey, 
     test_ratio, 
@@ -266,10 +267,12 @@ def general_train_test_split(
             q_test_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_test_oar, q_base_test_oar)
     elif new_full_tt_split:
         masked_base_oar = apply_no_sampling_masks(base_oar, no_sampling_masks, nw, num_steps, num_envs)
+        takenfork_base_oar = apply_no_sampling_masks(base_oar, sampling_masks, nw, num_steps, num_envs)
         not_taken_base_oar, q_test_oar = train_test_split(
             masked_base_oar,
             prngkey, 
             test_ratio, len(masked_base_oar['observations']), num_test=int(test_ratio*len(masked_base_oar['observations'])))
+        not_taken_base_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), not_taken_base_oar, takenfork_base_oar)
         q_train_oar = mc_oar
         if negative_oar is not None:
             q_train_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_train_oar, negative_oar)

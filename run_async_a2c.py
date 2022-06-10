@@ -322,6 +322,7 @@ def main(args: dict):
             base_oar=base_oar,
             mc_oar=mc_oar,
             negative_oar=negative_oar,
+            sampling_masks=jnp.stack(sampling_masks),
             no_sampling_masks=jnp.stack(no_sampling_masks),
             prngkey=prngkey,
             test_ratio=args['train_constants']['qf_test_ratio'],
