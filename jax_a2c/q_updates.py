@@ -185,7 +185,6 @@ def train_test_split_k_repeat(oar, prngkey, test_ratio, num_train_samples, k, nw
     if test_choices is None:
         test_choices = jax.random.choice(prngkey, num_diff_states, shape=(num_test,), replace=False)
     test_mask = jnp.zeros((num_diff_states,), dtype=bool).at[test_choices].set(True)
-    # oar = {k: jax.random.shuffle(prngkey, v) for k, v in oar.items()}
     oar_train = {k: v[:, jnp.logical_not(test_mask)] for k, v in oar.items()}
     oar_test = {k: v[:, test_mask] for k, v in oar.items()}
     oar_train = jax.tree_util.tree_map(lambda x: x.reshape((x.shape[0]*x.shape[1],) + x.shape[2:]), oar_train)
@@ -194,9 +193,6 @@ def train_test_split_k_repeat(oar, prngkey, test_ratio, num_train_samples, k, nw
 
 @functools.partial(jax.jit, static_argnames=('k', 'nw'))
 def groub_by_repeats(oar, k, nw):
-    # oar = jax.tree_util.tree_map(lambda x: x.reshape((nw, k, x.shape[0]//nw//k) + x.shape[1:]), oar)
-    # oar = jax.tree_util.tree_map(lambda x: jnp.swapaxes(x, 0, 1), oar)
-    # oar = jax.tree_util.tree_map(lambda x: x.reshape((k, x.shape[2]*nw,) + x.shape[3:]), oar)
     oar = jax.tree_util.tree_map(lambda x: group_by_repeats_single(x, k, nw), oar)
     return oar
 

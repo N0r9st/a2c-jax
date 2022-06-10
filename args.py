@@ -78,6 +78,10 @@ def parse_args():
 
     parser.add_argument('--full-tt-split', action='store_true', default=False, 
         help="almost separates obs from train and test. If use-base is off - separates fully")
+        
+    parser.add_argument('--new-full-tt-split', action='store_true', default=False, 
+        help="separates obs from train and test. test taken only from base.")
+
     parser.add_argument('--logstd-stopgrad', action='store_true', default=False, 
         help="stops gradient for entropy with Q-updates")
 
@@ -234,8 +238,11 @@ def update(args, cmd_args):
     args['negative_sampling'] = cmd_args.negative_sampling
     args['use_base_traj_for_q'] = cmd_args.use_base_traj_for_q
     args['full_tt_split'] = cmd_args.full_tt_split
+    args['new_full_tt_split'] = cmd_args.new_full_tt_split
 
-    
+    if (cmd_args.new_full_tt_split and cmd_args.full_tt_split):
+        raise Exception
+        
     return args
 
 args = update(args, cmd_args)
