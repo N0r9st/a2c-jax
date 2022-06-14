@@ -25,6 +25,11 @@ from jax_a2c.saving import save_state, load_state
 from flax.core import freeze
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
 
+
+from args import args
+
+args_main = deepcopy(args)
+
 POLICY_CLASSES = {
     'DiagGaussianPolicy': DiagGaussianPolicy, 
     'DiagGaussianStateDependentPolicy': DiagGaussianStateDependentPolicy,
@@ -48,12 +53,17 @@ def _worker(remote, k_remotes, parent_remote, spaces, device, add_args) -> None:
 
     while True:
         try:
-            args = remote.recv()
+            for _ in range(args_main['profiling']['sending']):
+                args = remote.recv()
             k_envs.obs_rms = args.pop('train_obs_rms')
             k_envs.ret_rms = args.pop('train_ret_rms')
             policy_fn = functools.partial(_policy_fn, **(args.pop('policy_fn')))
-            out = km_mc_rollouts_(policy_fn=policy_fn, **args)
-            remote.send(out)
+            
+            for _ in range(args_main['profiling']['mc_rollouts']):
+                out = km_mc_rollouts_(policy_fn=policy_fn, **args)
+
+            for _ in range(args_main['profiling']['sending']):
+                remote.send(out)
         except EOFError:
             break
 
@@ -254,13 +264,16 @@ def main(args: dict):
                     train_ret_rms=train_ret_rms,
                     firstrandom=False,
                     )
-                remote.send(to_worker)
+                for _ in range(args['profiling']['sending']):
+                    remote.send(to_worker)
 
             original_experience = stack_experiences(exp_list)
-            mc_experience =  jax.tree_util.tree_map(
-                lambda *dicts: jnp.stack(dicts),
-                *[remote.recv() for remote in remotes],
-                )
+
+            for _ in range(args['profiling']['sending']):
+                mc_experience =  jax.tree_util.tree_map(
+                    lambda *dicts: jnp.stack(dicts),
+                    *[remote.recv() for remote in remotes],
+                    )
 
             #----------------------------------------------------------------
             #                       NEGATIVES SAMPLING
@@ -283,10 +296,12 @@ def main(args: dict):
                         train_ret_rms=train_ret_rms,
                         firstrandom=True,
                         )
-                    remote.send(to_worker)
-                negative_exp = jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
-                    *[remote.recv() for remote in remotes]
-                    )
+                    for _ in range(args['profiling']['sending']):
+                        remote.send(to_worker)
+                for _ in range(args['profiling']['sending']):
+                    negative_exp = jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
+                        *[remote.recv() for remote in remotes]
+                        )
                 negative_oar = process_mc_rollout_output(
                     state.apply_fn, state.params, 
                     negative_exp, args['train_constants'])
@@ -341,25 +356,31 @@ def main(args: dict):
             })
         
         if args['train_constants']['q_updates'] != 'none':
-            state, (q_loss, q_loss_dict) = q_step(
-                state, 
-                # trajectories, 
-                q_train_oar, q_test_oar, # (Experience(original trajectory), List[dicts](kml trajs))
-                prngkey,
-                constant_params=args['train_constants'], jit_q_fn=jit_q_fn
-                )
-            state = state.replace(step=current_update)
+            for _ in range(args['profiling']['q_updating']):
+                state_, (q_loss, q_loss_dict) = q_step(
+                    state, 
+                    # trajectories, 
+                    q_train_oar, q_test_oar, # (Experience(original trajectory), List[dicts](kml trajs))
+                    prngkey,
+                    constant_params=args['train_constants'], jit_q_fn=jit_q_fn
+                    )
+                state_ = state_.replace(step=current_update)
+            state = state_
         prngkey, _ = jax.random.split(prngkey)
         p_train_data_dict = {
             'oar': oar,
             'not_sampled_observations': not_sampled_observations,
             }
-        state, (loss, loss_dict) = p_step(
-            state, 
-            p_train_data_dict,
-            prngkey,
-            constant_params=args['train_constants'],
-            )
+
+        for _ in range(args['profiling']['p_updating']):
+            state_, (loss, loss_dict) = p_step(
+                state, 
+                p_train_data_dict,
+                prngkey,
+                constant_params=args['train_constants'],
+                )
+        state = state_
+
         if args['save'] and (current_update % args['save_every']):
             additional = {}
             additional['obs_rms'] = deepcopy(envs.obs_rms)
@@ -387,8 +408,6 @@ def main(args: dict):
             wandb.log({'q-training/' + k: v for k, v in q_loss_dict.items()}, step=current_update)
 
 if __name__=='__main__':
-
-    from args import args
 
     ctx = mp.get_context("forkserver")
 

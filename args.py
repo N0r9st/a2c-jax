@@ -88,6 +88,14 @@ def parse_args():
     parser.add_argument('--equal-importance-ploss', action='store_true', default=False, 
         help="calculate policy loss when returns from q-function are counted as equals to the env returns")
 
+
+
+    parser.add_argument('--prof-sending', type=int, default=1)
+    parser.add_argument('--prof-mc-rollouts', type=int, default=1)
+    parser.add_argument('--prof-q-updating', type=int, default=1)
+    parser.add_argument('--prof-p-updating', type=int, default=1)
+
+
     args = parser.parse_args()
     return args
 
@@ -242,6 +250,14 @@ def update(args, cmd_args):
 
     if (cmd_args.new_full_tt_split and cmd_args.full_tt_split):
         raise Exception
+
+
+    args['profiling'] = dict(
+        sending=cmd_args.prof_sending,
+        mc_rollouts=cmd_args.prof_mc_rollouts,
+        q_updating=cmd_args.prof_q_updating,
+        p_updating=cmd_args.prof_p_updating, 
+        )
         
     return args
 
