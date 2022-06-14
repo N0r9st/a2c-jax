@@ -94,6 +94,8 @@ def parse_args():
     parser.add_argument('--prof-mc-rollouts', type=int, default=1)
     parser.add_argument('--prof-q-updating', type=int, default=1)
     parser.add_argument('--prof-p-updating', type=int, default=1)
+    parser.add_argument('--prof-cheap-step', action='store_true', default=False)
+    parser.add_argument('--prof-cheap-forward', action='store_true', default=False)
 
 
     args = parser.parse_args()
@@ -257,6 +259,8 @@ def update(args, cmd_args):
         mc_rollouts=cmd_args.prof_mc_rollouts,
         q_updating=cmd_args.prof_q_updating,
         p_updating=cmd_args.prof_p_updating, 
+        cheap_step=cmd_args.prof_cheap_step,
+        cheap_forward=cmd_args.prof_cheap_forward,
         )
         
     return args

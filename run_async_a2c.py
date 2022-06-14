@@ -58,6 +58,9 @@ def _worker(remote, k_remotes, parent_remote, spaces, device, add_args) -> None:
             k_envs.obs_rms = args.pop('train_obs_rms')
             k_envs.ret_rms = args.pop('train_ret_rms')
             policy_fn = functools.partial(_policy_fn, **(args.pop('policy_fn')))
+
+            args['cheap_step'] = args_main['profiling']['cheap_step']
+            args['cheap_forward'] = args_main['profiling']['cheap_forward']
             
             for _ in range(args_main['profiling']['mc_rollouts']):
                 out = km_mc_rollouts_(policy_fn=policy_fn, **args)

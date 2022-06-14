@@ -1,4 +1,5 @@
 import functools
+from turtle import forward
 from jax_a2c.utils import process_rewards
 import jax
 import jax.numpy as jnp
@@ -9,7 +10,22 @@ def repeat(array, K):
     repeated = jnp.concatenate([array for _ in range(K)], axis=0) 
     return repeated# .reshape((repeated.shape[1]*repeated.shape[0],) + repeated.shape[2:])
 
-def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_steps=1000, firstrandom=False):
+
+
+def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_steps=1000, firstrandom=False,
+    cheap_step=False, cheap_forward=False,):
+    # print('--------------------------------')
+    if cheap_step:
+        pass 
+    if cheap_forward:
+        cheap_acts = jnp.stack(k_envs.num_envs * [k_envs.action_space.sample()])
+        cheap_b_vals = jnp.array([0]*k_envs.num_envs )
+        def cheap_policy_fn(*args, **kwargs):
+            # print('forward_missed!')
+            return cheap_b_vals, cheap_acts
+        policy_fn = cheap_policy_fn
+
+    
     observations = experience.observations # (num_steps, num_envs, obs_shape)
     dones = experience.dones
     states = experience.states
@@ -21,7 +37,7 @@ def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_step
     # (in_states, obs_shape) -> (K * in_states, obs_shape)
     flat_dones = repeat(dones, K)
 
-    if firstrandom:
+    if firstrandom or cheap_forward:
         flat_actions = jax.random.uniform(prngkey, minval=k_envs.action_space.low, maxval=k_envs.action_space.high, 
         shape=flat_observations.shape[:-1] + k_envs.action_space.shape)
     else:
@@ -42,6 +58,8 @@ def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_step
 
     all_ds_array[0] = m_flat_dones
 
+    cheap_step_flg = 1
+
     for slc in range(0, len(m_flat_observations), num_envs):
         next_ob = m_flat_observations[slc: slc + num_envs]
         acts = m_flat_actions[slc: slc + num_envs]
@@ -56,7 +74,17 @@ def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_step
             if l != 0:                
                 _, acts = policy_fn(prngkey, ob) 
             acts = np.array(acts)
-            next_ob, rews, d, info = k_envs.step(acts)
+            if cheap_step:
+                if cheap_step_flg:
+                    next_ob, rews, d, info = k_envs.step(acts)
+                    # print('step!')
+                    CHEAP_TUPLE = next_ob, rews, d, info
+                    cheap_step_flg = 0
+                else:
+                    next_ob, rews, d, info = CHEAP_TUPLE
+            else:
+                next_ob, rews, d, info = k_envs.step(acts)
+                # print('step!')
             all_rewards_array[l, slc: slc + num_envs] = rews
             all_ds_array[l + 1, slc: slc + num_envs] = d
             all_obs_array[l, slc: slc + num_envs] = ob
