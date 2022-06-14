@@ -36,8 +36,6 @@ def q_loss_fn(
     loss_dict.update(
         q_loss=q_loss,
         current_q=q_estimations.mean(),
-        # baseline_q=rand_q_estimations.mean(),
-        # difference_q =q_estimations.mean() - rand_q_estimations.mean(),
         )
     return loss, loss_dict
 
@@ -47,14 +45,16 @@ def q_step(state, train_oar, test_oar, prngkey,
     loss = jnp.array(0)
         
     if not constant_params['use_q_tolerance']:
+        epoch_count = 0
         for _ in range(constant_params['qf_update_epochs']):
+            epoch_count += 1
             prngkey, _ = jax.random.split(prngkey)
             batches = get_batches(
                 train_oar, constant_params['qf_update_batch_size'], 
                 prngkey, constant_params['q_train_len'])
             for batch in batches:
                 state, _ = q_microstep(state, batch, prngkey, constant_params)
-            q_loss_dict = test_qf(prngkey, train_oar, test_oar, jit_q_fn, state.params)
+        q_loss_dict = test_qf(prngkey, train_oar, test_oar, jit_q_fn, state.params)
     else:
         min_test_loss = float('inf')
         tolerance = 0
@@ -83,18 +83,17 @@ def q_step(state, train_oar, test_oar, prngkey,
                 q_loss_dict = best_q_loss_dict
                 break
 
-        if constant_params['full_data_for_q_update']:
-            oar = merge_train_test(train_oar, test_oar)
-            for _ in range(epoch_count):
-                prngkey, _ = jax.random.split(prngkey)
-                batches = get_batches(
-                    oar, constant_params['qf_update_batch_size'], 
-                    prngkey, constant_params['q_train_len'])
-                for batch in batches:
-                    state, _ = q_microstep(state, batch, prngkey, constant_params)
-                # q_loss_dict = test_qf(prngkey, train_oar, test_oar, jit_q_fn, state.params)
+    if constant_params['full_data_for_q_update']:
+        oar = merge_train_test(train_oar, test_oar)
+        for _ in range(epoch_count):
+            prngkey, _ = jax.random.split(prngkey)
+            batches = get_batches(
+                oar, constant_params['qf_update_batch_size'], 
+                prngkey, len(oar['observations']))
+            for batch in batches:
+                state, _ = q_microstep(state, batch, prngkey, constant_params)
 
-        q_loss_dict['epoch_count'] = jnp.array(epoch_count)
+    q_loss_dict['epoch_count'] = jnp.array(epoch_count)
 
     return state, (loss, q_loss_dict)
 
@@ -187,7 +186,6 @@ def train_test_split_k_repeat(oar, prngkey, test_ratio, num_train_samples, k, nw
     if test_choices is None:
         test_choices = jax.random.choice(prngkey, num_diff_states, shape=(num_test,), replace=False)
     test_mask = jnp.zeros((num_diff_states,), dtype=bool).at[test_choices].set(True)
-    # oar = {k: jax.random.shuffle(prngkey, v) for k, v in oar.items()}
     oar_train = {k: v[:, jnp.logical_not(test_mask)] for k, v in oar.items()}
     oar_test = {k: v[:, test_mask] for k, v in oar.items()}
     oar_train = jax.tree_util.tree_map(lambda x: x.reshape((x.shape[0]*x.shape[1],) + x.shape[2:]), oar_train)
@@ -196,9 +194,6 @@ def train_test_split_k_repeat(oar, prngkey, test_ratio, num_train_samples, k, nw
 
 @functools.partial(jax.jit, static_argnames=('k', 'nw'))
 def groub_by_repeats(oar, k, nw):
-    # oar = jax.tree_util.tree_map(lambda x: x.reshape((nw, k, x.shape[0]//nw//k) + x.shape[1:]), oar)
-    # oar = jax.tree_util.tree_map(lambda x: jnp.swapaxes(x, 0, 1), oar)
-    # oar = jax.tree_util.tree_map(lambda x: x.reshape((k, x.shape[2]*nw,) + x.shape[3:]), oar)
     oar = jax.tree_util.tree_map(lambda x: group_by_repeats_single(x, k, nw), oar)
     return oar
 
