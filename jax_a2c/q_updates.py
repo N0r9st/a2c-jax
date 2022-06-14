@@ -45,14 +45,16 @@ def q_step(state, train_oar, test_oar, prngkey,
     loss = jnp.array(0)
         
     if not constant_params['use_q_tolerance']:
+        epoch_count = 0
         for _ in range(constant_params['qf_update_epochs']):
+            epoch_count += 1
             prngkey, _ = jax.random.split(prngkey)
             batches = get_batches(
                 train_oar, constant_params['qf_update_batch_size'], 
                 prngkey, constant_params['q_train_len'])
             for batch in batches:
                 state, _ = q_microstep(state, batch, prngkey, constant_params)
-            q_loss_dict = test_qf(prngkey, train_oar, test_oar, jit_q_fn, state.params)
+        q_loss_dict = test_qf(prngkey, train_oar, test_oar, jit_q_fn, state.params)
     else:
         min_test_loss = float('inf')
         tolerance = 0
@@ -87,12 +89,12 @@ def q_step(state, train_oar, test_oar, prngkey,
                 prngkey, _ = jax.random.split(prngkey)
                 batches = get_batches(
                     oar, constant_params['qf_update_batch_size'], 
-                    prngkey, constant_params['q_train_len'])
+                    prngkey, len(oar['observations']))
                 for batch in batches:
                     state, _ = q_microstep(state, batch, prngkey, constant_params)
                 # q_loss_dict = test_qf(prngkey, train_oar, test_oar, jit_q_fn, state.params)
 
-        q_loss_dict['epoch_count'] = jnp.array(epoch_count)
+    q_loss_dict['epoch_count'] = jnp.array(epoch_count)
 
     return state, (loss, q_loss_dict)
 
