@@ -230,7 +230,8 @@ def general_train_test_split(
     no_sampling_masks,
     prngkey, 
     test_ratio, 
-    k, nw, num_steps, num_envs, use_base_traj_for_q, full_tt_split, new_full_tt_split):
+    # k, nw, num_steps, num_envs, use_base_traj_for_q, full_tt_split, new_full_tt_split, weighted_tt_split):
+    k, nw, num_steps, num_envs, use_base_traj_for_q, split_type):
     """
     flags: use_base_traj_for_q, full_tt_split
     """
@@ -241,7 +242,7 @@ def general_train_test_split(
                 test_ratio, len(base_oar['observations']),)
         return q_train_oar, q_test_oar
         
-    if full_tt_split:
+    if split_type == 'full_tt_split':
         q_train_oar, q_test_oar, test_choices = train_test_split_k_repeat(
             mc_oar,
             prngkey, 
@@ -260,7 +261,8 @@ def general_train_test_split(
                 test_ratio, len(base_oar['observations']),)
             q_train_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_train_oar, q_base_train_oar)
             q_test_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_test_oar, q_base_test_oar)
-    elif new_full_tt_split:
+
+    elif split_type == 'new_full_tt_split':
         masked_base_oar = apply_no_sampling_masks(base_oar, no_sampling_masks, nw, num_steps, num_envs)
         takenfork_base_oar = apply_no_sampling_masks(base_oar, sampling_masks, nw, num_steps, num_envs)
         not_taken_base_oar, q_test_oar = train_test_split(
@@ -273,7 +275,25 @@ def general_train_test_split(
             q_train_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_train_oar, negative_oar)
         if use_base_traj_for_q:
             q_train_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_train_oar, not_taken_base_oar)
-    else:
+
+    elif split_type == 'weighted_tt_split':
+        masked_base_oar = apply_no_sampling_masks(base_oar, no_sampling_masks, nw, num_steps, num_envs)
+        takenfork_base_oar = apply_no_sampling_masks(base_oar, sampling_masks, nw, num_steps, num_envs)
+        not_taken_base_oar, q_test_oar = train_test_split(
+            masked_base_oar,
+            prngkey, 
+            test_ratio, len(masked_base_oar['observations']), num_test=int(test_ratio*len(masked_base_oar['observations'])))
+        not_taken_base_oar = jax.tree_util.tree_map(
+            lambda x: jnp.concatenate([x]*(k+1), axis=0),
+            not_taken_base_oar,
+        )
+        not_taken_base_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), not_taken_base_oar, takenfork_base_oar)
+        q_train_oar = mc_oar
+        if negative_oar is not None:
+            q_train_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_train_oar, negative_oar)
+        if use_base_traj_for_q:
+            q_train_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_train_oar, not_taken_base_oar)
+    elif split_type == 'standart':
         q_train_oar, q_test_oar = train_test_split(
             mc_oar,
             prngkey, 
@@ -292,6 +312,8 @@ def general_train_test_split(
                 test_ratio, len(base_oar['observations']),)
             q_train_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_train_oar, q_base_train_oar)
             q_test_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), q_test_oar, q_base_test_oar)
+    else:
+        raise NotImplementedError
 
     return q_train_oar, q_test_oar
 

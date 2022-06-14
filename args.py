@@ -3,6 +3,11 @@ possible_types = ['sample-KM-rollouts-fast', 'standart']
 possible_q_updates = [None, 'rep', 'log', 'none']
 possible_policy_types = ['DiagGaussianPolicy', 'DiagGaussianStateDependentPolicy']
 possible_sampling_types = ['uniform', 'adv',]
+possible_split_types = ['full_tt_split',
+                        'new_full_tt_split',
+                        'weighted_tt_split',
+                        'standart',]
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--wandb-project', type=str, default=None)
@@ -76,11 +81,12 @@ def parse_args():
 
     parser.add_argument('--use-base-traj-for-q', action='store_true', default=False)
 
-    parser.add_argument('--full-tt-split', action='store_true', default=False, 
-        help="almost separates obs from train and test. If use-base is off - separates fully")
+    # parser.add_argument('--full-tt-split', action='store_true', default=False, 
+    #     help="almost separates obs from train and test. If use-base is off - separates fully")
         
-    parser.add_argument('--new-full-tt-split', action='store_true', default=False, 
-        help="separates obs from train and test. test taken only from base.")
+    # parser.add_argument('--new-full-tt-split', action='store_true', default=False, 
+    #     help="separates obs from train and test. test taken only from base.")
+    parser.add_argument('--split-type', type=str, default='standart')
 
     parser.add_argument('--logstd-stopgrad', action='store_true', default=False, 
         help="stops gradient for entropy with Q-updates")
@@ -200,6 +206,8 @@ def update(args, cmd_args):
 
     if not cmd_args.use_samples_for_log_update:
         raise NotImplementedError
+    if cmd_args.split_type not in possible_split_types:
+        raise NotImplementedError
 
     args['train_constants'] = dict(
         value_loss_coef=args['value_loss_coef'], 
@@ -237,12 +245,12 @@ def update(args, cmd_args):
 
     args['negative_sampling'] = cmd_args.negative_sampling
     args['use_base_traj_for_q'] = cmd_args.use_base_traj_for_q
-    args['full_tt_split'] = cmd_args.full_tt_split
-    args['new_full_tt_split'] = cmd_args.new_full_tt_split
+    # args['full_tt_split'] = cmd_args.full_tt_split
+    # args['new_full_tt_split'] = cmd_args.new_full_tt_split
 
-    if (cmd_args.new_full_tt_split and cmd_args.full_tt_split):
-        raise Exception
-        
+    # if (cmd_args.new_full_tt_split and cmd_args.full_tt_split):
+    #     raise Exception
+    args['split_type'] = cmd_args.split_type
     return args
 
 args = update(args, cmd_args)
