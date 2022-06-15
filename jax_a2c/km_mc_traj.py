@@ -13,7 +13,7 @@ def repeat(array, K):
 
 
 def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_steps=1000, firstrandom=False,
-    cheap_step=False, cheap_forward=False,):
+    cheap_step=False, cheap_forward=False, cheaper_step=False):
     # print('--------------------------------')
     if cheap_step:
         pass 
@@ -79,6 +79,14 @@ def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_step
                     next_ob, rews, d, info = k_envs.step(acts)
                     # print('step!')
                     CHEAP_TUPLE = next_ob, rews, d, info
+                    cheap_step_flg = 0
+                else:
+                    next_ob, rews, d, info = CHEAP_TUPLE
+            elif cheaper_step:
+                if cheap_step_flg:
+                    next_ob, rews, d, info = k_envs.step(acts)
+                    # print('step!')
+                    CHEAP_TUPLE = jnp.array(next_ob), rews, d, info
                     cheap_step_flg = 0
                 else:
                     next_ob, rews, d, info = CHEAP_TUPLE

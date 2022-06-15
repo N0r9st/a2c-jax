@@ -60,6 +60,7 @@ def _worker(remote, k_remotes, parent_remote, spaces, device, add_args) -> None:
             policy_fn = functools.partial(_policy_fn, **(args.pop('policy_fn')))
 
             args['cheap_step'] = args_main['profiling']['cheap_step']
+            args['cheaper_step'] = args_main['profiling']['cheaper_step']
             args['cheap_forward'] = args_main['profiling']['cheap_forward']
             
             for _ in range(args_main['profiling']['mc_rollouts']):
