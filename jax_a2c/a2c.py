@@ -21,14 +21,36 @@ def p_loss_fn(
     q_fn: Callable,
     constant_params,
     ):
-    oar = data_dict['oar']
+
+    #----------------------------------------
+    #               BASIC UPDATE
+    #----------------------------------------
+
+    if constant_params['use_base_for_policy_update']:
+        oar = data_dict['oar']
+    else:
+        oar = data_dict['mc_oar']
+        
     observations = oar['observations']
     actions = oar['actions']
     returns = oar['returns']
-
+    print(observations.shape)
     action_logprobs, sampled_action_logprobs, values, dist_entropy, log_stds, action_samples = evaluate_actions(
         params['policy_params'], 
         apply_fn, observations, actions, prngkey)
+
+    advantages = jax.lax.stop_gradient(returns - values)
+    if constant_params['equal_importance_ploss']:
+        policy_loss = - (advantages * action_logprobs)
+    else:
+        policy_loss = - (advantages * action_logprobs).mean()
+
+    value_loss = ((returns - values)**2).mean()
+    
+
+    #----------------------------------------
+    #               Q - UPDATE
+    #----------------------------------------
 
     if constant_params['return_in_remaining']:
         q_observations = data_dict['not_sampled_observations']
@@ -37,33 +59,20 @@ def p_loss_fn(
             prngkey, q_observations, constant_params['K'], constant_params['logstd_stopgrad'])
         q_observations = jnp.concatenate([q_observations]*constant_params['K'], axis=0)
     else:
-        q_observations = observations
-        q_action_samples, q_logprobs, q_values = action_samples, sampled_action_logprobs, values
-    #--------------------------------
-    #          ADVANTAGES
-    #--------------------------------
-    advantages = jax.lax.stop_gradient(returns - values)
+        q_observations = data_dict['base_oar']['observations']
+        q_action_samples, q_logprobs, q_values = sample_acts_for_obs(
+            params['policy_params'], apply_fn, 
+            prngkey, q_observations, constant_params['K'], constant_params['logstd_stopgrad'])
+        q_observations = jnp.concatenate([q_observations]*constant_params['K'], axis=0)
 
-    #----------------------------------------
-    #               BASIC UPDATE
-    #----------------------------------------
-    loss_dict = {}
-    if constant_params['equal_importance_ploss']:
-        policy_loss = - (advantages * action_logprobs)
-    else:
-        policy_loss = - (advantages * action_logprobs).mean()
-
-    value_loss = ((returns - values)**2).mean()
     qp_loss = jnp.array(0)
     if constant_params['q_updates'] == 'rep':
-
         qp_loss = - (q_fn(
             jax.lax.stop_gradient({'params': params['qf_params']}), q_observations, q_action_samples
             ).mean() +\
                  constant_params['alpha']*dist_entropy)
 
     elif constant_params['q_updates'] == 'log':
-        
         q_sampled_estimations = q_fn({'params': params['qf_params']}, q_observations, q_action_samples)
         q_estimated_advantages = q_sampled_estimations - q_values
 
@@ -77,6 +86,8 @@ def p_loss_fn(
     if constant_params['equal_importance_ploss']:
         policy_loss = policy_loss.mean()
     loss = constant_params['value_loss_coef']*value_loss + policy_loss - constant_params['entropy_coef'] * dist_entropy
+
+    loss_dict = {}
 
     loss_dict.update(
         value_loss=value_loss, 

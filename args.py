@@ -94,6 +94,10 @@ def parse_args():
     parser.add_argument('--equal-importance-ploss', action='store_true', default=False, 
         help="calculate policy loss when returns from q-function are counted as equals to the env returns")
 
+
+    parser.add_argument('--dont-use-base-for-policy-update', action='store_true', default=False, 
+        help="calculate policy loss when returns from q-function are counted as equals to the env returns")
+
     args = parser.parse_args()
     return args
 
@@ -235,6 +239,7 @@ def update(args, cmd_args):
         K=args['K'],
         logstd_stopgrad=cmd_args.logstd_stopgrad,
         equal_importance_ploss=cmd_args.equal_importance_ploss,
+        use_base_for_policy_update=not cmd_args.dont_use_base_for_policy_update,
     )
 
     args['sampling_type'] = cmd_args.sampling_type

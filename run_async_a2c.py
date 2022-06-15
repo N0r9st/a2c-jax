@@ -311,24 +311,23 @@ def main(args: dict):
                 returns=jnp.concatenate((base_oar['returns'], mc_oar['returns']), axis=0),
                 )
             not_sampled_observations = jnp.concatenate(not_selected_observations_list, axis=0)
+            sampling_masks = jnp.stack(sampling_masks)
+            no_sampling_masks = jnp.stack(no_sampling_masks)
         else:
             negative_oar = None
             mc_oar = None
             oar = base_oar
             not_sampled_observations = base_oar['observations'].reshape((-1, base_oar['observations'].shape[-1]))
+            sampling_masks = None
+            no_sampling_masks = None
 
-        # import pickle
-        # with open('data.pkl', 'wb') as f:
-        #     pickle.dump((base_oar, mc_oar, negative_oar, jnp.stack(sampling_masks), jnp.stack(no_sampling_masks)), f)
-
-        # exit()
         prngkey, _ = jax.random.split(prngkey)
         q_train_oar, q_test_oar = general_train_test_split(
             base_oar=base_oar,
             mc_oar=mc_oar,
             negative_oar=negative_oar,
-            sampling_masks=jnp.stack(sampling_masks),
-            no_sampling_masks=jnp.stack(no_sampling_masks),
+            sampling_masks=sampling_masks,
+            no_sampling_masks=no_sampling_masks,
             prngkey=prngkey,
             test_ratio=args['train_constants']['qf_test_ratio'],
             k=args['K'],
@@ -356,6 +355,8 @@ def main(args: dict):
         prngkey, _ = jax.random.split(prngkey)
         p_train_data_dict = {
             'oar': oar,
+            'base_oar': base_oar,
+            'mc_oar': mc_oar,
             'not_sampled_observations': not_sampled_observations,
             }
         state, (loss, loss_dict) = p_step(
