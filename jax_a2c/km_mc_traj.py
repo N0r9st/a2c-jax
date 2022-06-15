@@ -13,13 +13,21 @@ def repeat(array, K):
 
 
 def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_steps=1000, firstrandom=False,
-    cheap_step=False, cheap_forward=False, cheaper_step=False):
+    cheap_step=False, cheap_forward=False, cheaper_step=False, cheaper_forward=False,):
     # print('--------------------------------')
     if cheap_step:
         pass 
     if cheap_forward:
         cheap_acts = jnp.stack(k_envs.num_envs * [k_envs.action_space.sample()])
         cheap_b_vals = jnp.array([0]*k_envs.num_envs )
+        def cheap_policy_fn(*args, **kwargs):
+            # print('forward_missed!')
+            return cheap_b_vals, cheap_acts
+        policy_fn = cheap_policy_fn
+
+    if cheaper_forward:
+        cheap_acts = np.stack(k_envs.num_envs * [k_envs.action_space.sample()])
+        cheap_b_vals = np.array([0]*k_envs.num_envs )
         def cheap_policy_fn(*args, **kwargs):
             # print('forward_missed!')
             return cheap_b_vals, cheap_acts

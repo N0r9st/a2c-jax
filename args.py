@@ -97,6 +97,7 @@ def parse_args():
     parser.add_argument('--prof-cheap-step', action='store_true', default=False)
     parser.add_argument('--prof-cheaper-step', action='store_true', default=False)
     parser.add_argument('--prof-cheap-forward', action='store_true', default=False)
+    parser.add_argument('--prof-cheaper-forward', action='store_true', default=False)
 
 
     args = parser.parse_args()
@@ -263,6 +264,7 @@ def update(args, cmd_args):
         cheap_step=cmd_args.prof_cheap_step,
         cheaper_step=cmd_args.prof_cheaper_step,
         cheap_forward=cmd_args.prof_cheap_forward,
+        cheaper_forward=cmd_args.prof_cheaper_forward,
         )
         
     return args
