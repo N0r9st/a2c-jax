@@ -26,8 +26,9 @@ def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_step
         policy_fn = cheap_policy_fn
 
     if cheaper_forward:
-        cheap_acts = np.stack(k_envs.num_envs * [k_envs.action_space.sample()])
-        cheap_b_vals = np.array([0]*k_envs.num_envs )
+        cheap_acts = jnp.stack([k_envs.action_space.sample() for _ in range(k_envs.num_envs)])
+        cheap_b_vals = jnp.array([0]*k_envs.num_envs )
+        np_ACTS = jnp.stack(k_envs.num_envs * [k_envs.action_space.sample()]).__array__()
         def cheap_policy_fn(*args, **kwargs):
             # print('forward_missed!')
             return cheap_b_vals, cheap_acts
@@ -45,7 +46,7 @@ def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_step
     # (in_states, obs_shape) -> (K * in_states, obs_shape)
     flat_dones = repeat(dones, K)
 
-    if firstrandom or cheap_forward:
+    if firstrandom or cheap_forward or cheaper_forward:
         flat_actions = jax.random.uniform(prngkey, minval=k_envs.action_space.low, maxval=k_envs.action_space.high, 
         shape=flat_observations.shape[:-1] + k_envs.action_space.shape)
     else:
@@ -81,7 +82,10 @@ def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_step
             _, prngkey = jax.random.split(prngkey)
             if l != 0:                
                 _, acts = policy_fn(prngkey, ob) 
-            acts = np.array(acts)
+            if cheaper_forward:
+                acts = np_ACTS
+            else:
+                acts = np.array(acts)
             if cheap_step:
                 if cheap_step_flg:
                     next_ob, rews, d, info = k_envs.step(acts)
