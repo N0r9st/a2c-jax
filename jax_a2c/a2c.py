@@ -34,7 +34,6 @@ def p_loss_fn(
     observations = oar['observations']
     actions = oar['actions']
     returns = oar['returns']
-    print(observations.shape)
     action_logprobs, sampled_action_logprobs, values, dist_entropy, log_stds, action_samples = evaluate_actions(
         params['policy_params'], 
         apply_fn, observations, actions, prngkey)
