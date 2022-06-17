@@ -255,10 +255,17 @@ def main(args: dict):
                     firstrandom=False,
                     )
                 remote.send(to_worker)
-
             original_experience = stack_experiences(exp_list)
-            mc_experience =  jax.tree_util.tree_map(
-                lambda *dicts: jnp.stack(dicts),
+            import pickle
+            # with open('recvd2.pkl', 'wb') as f:
+            #     pickle.dump(remote.recv(), f)
+            # exit()
+            # mc_experience =  jax.tree_util.tree_map(
+            #     lambda *dicts: jnp.stack(dicts),
+            #     *[remote.recv() for remote in remotes],
+            #     )
+            mc_oar = jax.tree_util.tree_map(
+                lambda *dicts: jnp.concatenate(dicts, axis=0),
                 *[remote.recv() for remote in remotes],
                 )
 
@@ -284,12 +291,15 @@ def main(args: dict):
                         firstrandom=True,
                         )
                     remote.send(to_worker)
-                negative_exp = jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
+                # negative_exp = jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
+                #     *[remote.recv() for remote in remotes]
+                #     )
+                # negative_oar = process_mc_rollout_output(
+                #     state.apply_fn, state.params, 
+                #     negative_exp, args['train_constants'])
+                negative_oar = jax.tree_util.tree_map(lambda *dicts: jnp.concatenate(dicts, axis=0),
                     *[remote.recv() for remote in remotes]
                     )
-                negative_oar = process_mc_rollout_output(
-                    state.apply_fn, state.params, 
-                    negative_exp, args['train_constants'])
             #----------------------------------------------------------------
             #----------------------------------------------------------------
         else:
@@ -304,7 +314,7 @@ def main(args: dict):
         base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
 
         if args['type'] != 'standart':
-            mc_oar = process_mc_rollout_output(state.apply_fn, state.params, mc_experience, args['train_constants'])
+            # mc_oar = process_mc_rollout_output(state.apply_fn, state.params, mc_experience, args['train_constants'])
             oar = dict(
                 observations=jnp.concatenate((base_oar['observations'], mc_oar['observations']), axis=0),
                 actions=jnp.concatenate((base_oar['actions'], mc_oar['actions']), axis=0),

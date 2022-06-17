@@ -1,8 +1,9 @@
 import functools
-from jax_a2c.utils import process_rewards
+from jax_a2c.utils import process_rewards, process_single_mc_rollout_output
 import jax
 import jax.numpy as jnp
 import numpy as np
+from flax.core import freeze
 
 @functools.partial(jax.jit, static_argnums=(1,))
 def repeat(array, K):
@@ -69,12 +70,17 @@ def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_step
         
         bootstrapped_values, _ = policy_fn(prngkey, next_ob) # ???
         all_boot_list.append(bootstrapped_values)
+
+    all_boot_list = jnp.concatenate(all_boot_list)
     rollout_data = dict(
         observations=all_obs_array,
         next_observations=all_next_obs_array,
         actions=all_act_array,
         dones=all_ds_array,
         rewards=all_rewards_array,
-        bootstrapped=jnp.concatenate(all_boot_list), # (1, in_states)
+        bootstrapped=all_boot_list, # (1, in_states)
         )
-    return rollout_data
+    constant_params = dict(alpha=0, gamma=gamma, entropy=None, M=M)
+    rollout_oar = process_single_mc_rollout_output(
+                    rollout_data, freeze(constant_params))
+    return rollout_oar

@@ -114,4 +114,3 @@ def p_step(state, data_dict, prngkey,
         constant_params,)
     new_state = state.apply_gradients(grads=grads)
     return new_state, (loss, loss_dict)
-    

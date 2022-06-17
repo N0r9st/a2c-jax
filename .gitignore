@@ -11,3 +11,5 @@ test.py
 tests/*
 test2.py
 **.pkl
+**.out
+**.log

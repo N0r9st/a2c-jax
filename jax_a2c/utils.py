@@ -204,7 +204,7 @@ def process_experience_with_entropy(
         ))
     return trajectories, entropy
 
-@functools.partial(jax.jit, static_argnums=(3, 4))
+@functools.partial(jax.jit, static_argnames=('gamma',))
 def process_rewards(dones, rewards, bootstrapped_values, gamma):
     masks = jnp.cumprod((1-dones)*gamma, axis=0)/gamma
     k_returns = (rewards*masks[:-1]).sum(axis=0) + bootstrapped_values * masks[-1]
@@ -229,7 +229,7 @@ def process_rewards_with_entropy(
     masks = jnp.cumprod((1-dones)*gamma, axis=0)/gamma
     
     if alpha>0:
-        len_rollout, n_rollout, obs_shape = observations.shap
+        len_rollout, n_rollout, obs_shape = observations.shape
         _, (means, log_stds) = apply_fn({'params': params}, observations.reshape((len_rollout * n_rollout, obs_shape)))
         if entropy == 'estimation':
             actions = actions.reshape((len_rollout * n_rollout, -1))
@@ -344,6 +344,7 @@ def substract_from_list(lst, ind):
         out.append(lst[i])
     return out
 
+@functools.partial(jax.jit, static_argnames=('M',))
 def process_mc_rollouts(observations, actions, returns, M):
     returns = returns.reshape(M, returns.shape[0]//M).mean(axis=0)
     observations = observations[0, :observations.shape[1]//M]
@@ -424,6 +425,36 @@ def process_mc_rollout_output(apply_fn, params, mc_rollouts_exp, constant_params
     mc_observations, mc_actions, mc_returns = tuple(map(
         lambda x: x.reshape((x.shape[0]*x.shape[1],) + x.shape[2:]), (mc_observations, mc_actions, mc_returns)
     ))
+    return dict(
+        observations=mc_observations,
+        actions=mc_actions,
+        returns=mc_returns,
+    )
+
+@functools.partial(jax.jit, static_argnames=('constant_params','apply_fn'))
+def process_single_mc_rollout_output(mc_rollouts_exp, constant_params):
+    mc_rollouts_returns = process_rewards_with_entropy(
+        None,
+        None,
+        mc_rollouts_exp['observations'],
+        mc_rollouts_exp['actions'],
+        mc_rollouts_exp['dones'],
+        mc_rollouts_exp['rewards'],
+        mc_rollouts_exp['bootstrapped'],
+        constant_params['alpha'],
+        constant_params['gamma'],
+        constant_params['entropy'],
+    )
+
+    mc_observations, mc_actions, mc_returns = process_mc_rollouts(
+        mc_rollouts_exp['observations'],
+        mc_rollouts_exp['actions'],
+        mc_rollouts_returns,
+        constant_params['M']
+    )
+    # mc_observations, mc_actions, mc_returns = tuple(map(
+    #     lambda x: x.reshape((x.shape[0]*x.shape[1],) + x.shape[2:]), (mc_observations, mc_actions, mc_returns)
+    # ))
     return dict(
         observations=mc_observations,
         actions=mc_actions,
