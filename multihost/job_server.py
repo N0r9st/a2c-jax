@@ -1,4 +1,5 @@
 from threading import Event
+from tracemalloc import start
 
 import redis
 import os, sys, time
@@ -193,3 +194,86 @@ class JobServer:
 
 class JobServerOutOfDateException(BaseException):
     pass
+
+class KLMJobServer:
+    def __init__(self,
+                 host="localhost",
+                 port=7070,
+                 jobs_key="jobs",
+                 results_key="results",
+                 redis_init_wait_seconds=5,
+                 password=None,
+                 verbose=True,
+                 **kwargs,
+                 ):
+        """
+        The database instance that can stores paths, model weights and metadata.
+        Implemented as a thin wrapper over Redis.
+        :param host: redis hostname
+        :param port: redis port
+        :param args: args for database client (redis)
+        :param kwargs: kwargs for database client (redis), e.g. password="***"
+        :param default_prefix: prepended to both default_params_key and default_session_key and
+            default_worker_prefix. Does NOT affect custom keys.
+        :param jobs_key: default name for incomplete job
+        :param results_key: default name for job results
+        :param model_key: default name for weights pickle
+        """
+        self.jobs_key, self.results_key = jobs_key, results_key
+        self.verbose = verbose
+
+        # if localhost and can't find redis, start one
+        if host in ("localhost", "0.0.0.0", "127.0.0.1", "*"):
+            try:
+                redis.Redis(host=host, port=port, password=password, **kwargs).client_list()
+            except redis.ConnectionError:
+                # if not, on localhost try launch new one
+                if self.verbose:
+                    print("Redis not found on %s:%s. Launching new redis..." % (host, port))
+                self.start_redis(port=port, requirepass=password, **kwargs)
+                time.sleep(redis_init_wait_seconds)
+
+        self.redis = redis.Redis(host=host, port=port, password=password, **kwargs)
+        if self.verbose and len(self.redis.keys()):
+            warn("Found existing keys: {}".format(self.redis.keys()))
+
+    def start_redis(self, **kwargs):
+        """starts a redis serven in a NON-DAEMON mode"""
+        kwargs_list = [
+            "--{} {}".format(name, value)
+            for name, value in kwargs.items()
+        ]
+        cmd = "nohup redis-server {} > .redis.log &".format(' '.join(kwargs_list))
+        if self.verbose:
+            print("CMD:", cmd)
+        os.system(cmd)
+
+    @staticmethod
+    def dumps(data):
+        """ converts whatever to string """
+        return pickle.dumps(data, protocol=4)
+
+    @staticmethod
+    def loads(string):
+        """ converts string to whatever was dumps'ed in it """
+        return pickle.loads(string)
+
+    def reset_queue(self):
+        for key in self.jobs_key, self.results_key:
+            self.redis.delete(key)
+        return True
+    
+    def add_jobs(self, *jobs):
+        return self.redis.rpush(self.jobs_key, *map(self.dumps, jobs))
+
+    def commit_result(self, result):
+        return self.redis.rpush(self.results_key, self.dumps(result))
+
+    def get_result(self, timeout=0):
+        payload = self.redis.blpop(self.results_key, timeout=timeout)
+        if payload is not None: return self.loads(payload[1])
+
+    def get_job(self, timeout=0):
+        payload = self.redis.blpop(self.jobs_key, timeout=timeout)
+        return self.loads(payload[1])
+
