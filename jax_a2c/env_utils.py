@@ -168,7 +168,7 @@ class DummySubprocVecEnv(SubprocVecEnv):
         self.observation_space = None
         self.action_space = None
 
-def run_workers(worker, k_envs_fn, num_workers, spaces, ctx, split_between_devices, add_args: dict):
+def run_workers(worker, global_args, k_envs_fn, num_workers, spaces, ctx, split_between_devices, add_args: dict):
     remotes, work_remotes = zip(*[ctx.Pipe() for _ in range(num_workers)])
     processes = []
     if split_between_devices:
@@ -185,7 +185,7 @@ def run_workers(worker, k_envs_fn, num_workers, spaces, ctx, split_between_devic
         _k_envs = env_fn()
         k_remotes = _k_envs.remotes
         del _k_envs
-        args1 = (work_remote, k_remotes, remote, spaces, device, add_args)
+        args1 = (global_args, k_remotes, remote, spaces, device, add_args)
         process = ctx.Process(target=worker, args=args1, daemon=True)
         process.start()
         processes.append(process)

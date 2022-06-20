@@ -26,6 +26,8 @@ from flax.core import freeze
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
 from multihost.job_server import KLMJobServer
 
+from args import args
+
 POLICY_CLASSES = {
     'DiagGaussianPolicy': DiagGaussianPolicy, 
     'DiagGaussianStateDependentPolicy': DiagGaussianStateDependentPolicy,
@@ -35,9 +37,8 @@ def _policy_fn(prngkey, observation, params, apply_fn, determenistic=False):
     sampled_actions  = means if determenistic else sample_action(prngkey, means, log_stds)
     return values, sampled_actions
 
-def _worker(remote, k_remotes, parent_remote, spaces, device, add_args) -> None:
-    port = 6951 
-    server = KLMJobServer(host='*', port=port, password='fuckingpassword')
+def _worker(global_args, k_remotes, parent_remote, spaces, device, add_args) -> None:
+    server = KLMJobServer(host=global_args['redis_host'], port=global_args['redis_port'], password='fuckingpassword')
 
     print('D:', device)
     os.environ['CUDA_VISIBLE_DEVICES'] = str(device)
@@ -120,6 +121,7 @@ def main(args: dict):
         add_args = {'policy_fn': _apply_policy_fn}
         remotes = run_workers(
             _worker, 
+            args,
             k_envs_fn, 
             args['num_workers'], 
             (envs.observation_space, envs.action_space),
@@ -133,7 +135,7 @@ def main(args: dict):
     
 if __name__=='__main__':
 
-    from args import args
+    
 
     ctx = mp.get_context("forkserver")
 

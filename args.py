@@ -98,6 +98,10 @@ def parse_args():
     parser.add_argument('--dont-use-base-for-policy-update', action='store_true', default=False, 
         help="calculate policy loss when returns from q-function are counted as equals to the env returns")
 
+    parser.add_argument('--redis-host', type=str, default='*')
+    parser.add_argument('--redis-port', type=int, default=6951)
+
+
     args = parser.parse_args()
     return args
 
@@ -256,6 +260,8 @@ def update(args, cmd_args):
     # if (cmd_args.new_full_tt_split and cmd_args.full_tt_split):
     #     raise Exception
     args['split_type'] = cmd_args.split_type
+    args['redis_host'] = cmd_args.redis_host
+    args['redis_port'] = cmd_args.redis_port
     return args
 
 args = update(args, cmd_args)

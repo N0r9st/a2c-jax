@@ -25,6 +25,8 @@ from jax_a2c.saving import save_state, load_state
 from flax.core import freeze
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
 
+from multihost.job_server import KLMJobServer
+
 POLICY_CLASSES = {
     'DiagGaussianPolicy': DiagGaussianPolicy, 
     'DiagGaussianStateDependentPolicy': DiagGaussianStateDependentPolicy,
@@ -102,9 +104,8 @@ def main(args: dict):
     # -----------------------------------------
     #            CONNECTING TO REDIS
     #-----------------------------------------
-    from multihost.job_server import KLMJobServer
-    port = 6951
-    server = KLMJobServer(host='*', port=port, password='fuckingpassword')
+    
+    server = KLMJobServer(host=args['redis_host'], port=args['redis_port'], password='fuckingpassword')
 
     server.reset_queue()
     # ------------------------------------------
