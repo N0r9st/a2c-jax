@@ -30,7 +30,7 @@ POLICY_CLASSES = {
     'DiagGaussianStateDependentPolicy': DiagGaussianStateDependentPolicy,
 }
 
-N_PACKAGES = 4
+N_PACKAGES = 8
 
 def _policy_fn(prngkey, observation, params, apply_fn, determenistic=False):
     values, (means, log_stds) = apply_fn({'params': params}, observation)
@@ -105,6 +105,8 @@ def main(args: dict):
     from multihost.job_server import KLMJobServer
     port = 6951
     server = KLMJobServer(host='*', port=port, password='fuckingpassword')
+
+    server.reset_queue()
     # ------------------------------------------
 
     if args['load']:
@@ -147,12 +149,6 @@ def main(args: dict):
             _, eval_return = eval(state.apply_fn, state.params['policy_params'], eval_envs)
             print(f'Updates {current_update}/{total_updates}. Eval return: {eval_return}. Epoch_time: {epoch_time}.')
 
-            if args['eval_with_q']:
-                eval_envs.obs_rms = deepcopy(envs.obs_rms)
-                _, q_eval_return = q_eval(state.apply_fn, state.params['policy_params'], 
-                                        state.q_fn, state.params['qf_params'], eval_envs)
-                print(f'Q-eval return: {q_eval_return}')
-
         #------------------------------------------------
         #              WORKER ROLLOUTS
         #------------------------------------------------
@@ -182,7 +178,7 @@ def main(args: dict):
                 add_args['advantages'] = advs
                 add_args['sampling_prob_temp'] = args['sampling_prob_temp']
             sampled_exp, not_selected_observations, sampling_mask, no_sampling_mask = select_random_states(
-                prngkey, args['n_samples']//args['num_workers'], 
+                prngkey, args['n_samples']//N_PACKAGES, 
                 experience, type=args['sampling_type'], **add_args)
 
             sampling_masks.append(sampling_mask)
@@ -214,44 +210,24 @@ def main(args: dict):
                 train_obs_rms=train_obs_rms,
                 train_ret_rms=train_ret_rms,
                 firstrandom=False,
+                iteration=current_update,
                 )
-            remote.send(to_worker)
+            # remote.send(to_worker)
+            print("ADDING JOB")
+            server.add_jobs(to_worker)
+
+        print("WAITING FOR RESULTS")
+        list_results, workers_logs  = server.get_job_results(current_update, N_PACKAGES)
+        print("GOT SOME STUFF FROM WORKERS")
         original_experience = stack_experiences(exp_list)
         
         mc_oar = jax.tree_util.tree_map(
-            lambda *dicts: jnp.concatenate(dicts, axis=0),
-            *[remote.recv() for remote in remotes],
-            )
+            lambda *dicts: jnp.concatenate(dicts, axis=0),*[x['mc_oar'] for x in list_results],)
 
         #----------------------------------------------------------------
         #                       NEGATIVES SAMPLING
         #----------------------------------------------------------------
         negative_oar = None
-        if args['negative_sampling']:
-            for remote, add_args, sampled_exp in zip(remotes, add_args_list, sampled_exp_list):
-                prngkey, _ = jax.random.split(prngkey)
-                to_worker = dict(
-                    prngkey=prngkey,
-                    experience=sampled_exp,
-                    gamma=args['gamma'],
-                    policy_fn=dict(
-                        params=state.params['policy_params'], 
-                        determenistic=args['km_determenistic']),
-                    max_steps=args['L'],
-                    K=args['K'],
-                    M=args['M'],
-                    train_obs_rms=train_obs_rms,
-                    train_ret_rms=train_ret_rms,
-                    firstrandom=True,
-                    )
-                remote.send(to_worker)
-
-            negative_oar = jax.tree_util.tree_map(lambda *dicts: jnp.concatenate(dicts, axis=0),
-                *[remote.recv() for remote in remotes]
-                )
-        #----------------------------------------------------------------
-        #----------------------------------------------------------------
-        
         base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
 
         if args['type'] != 'standart':
@@ -341,6 +317,8 @@ def main(args: dict):
             loss_dict['loss'] = loss.item()
             wandb.log({'training/' + k: v for k, v in loss_dict.items()}, step=current_update)
             wandb.log({'q-training/' + k: v for k, v in q_loss_dict.items()}, step=current_update)
+            wandb.log({'multihost/' + k: v for k, v in workers_logs.items()}, step=current_update)
+
 
 if __name__=='__main__':
 

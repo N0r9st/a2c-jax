@@ -277,3 +277,35 @@ class KLMJobServer:
         payload = self.redis.blpop(self.jobs_key, timeout=timeout)
         return self.loads(payload[1])
 
+    def get_job_results(self, current_iteration, num_expected_jobs, timeout=4):
+        st = time.time()
+        results = [self.get_result()]
+        wtd = time.time() - st
+        times = [wtd]
+        
+        timeout = 0# max(timeout, int(wtd) + 1)
+        incorrect_iteration = 0
+        while True:
+            st = time.time()
+            result = self.get_result(timeout=timeout)
+            wtd = time.time() - st
+            times.append(wtd)
+            if result is None: break
+                
+            if result['iteration']==current_iteration: 
+                results.append(result)
+            else:
+                incorrect_iteration += 1
+                
+            if len(results) == num_expected_jobs: break
+                
+        logs = dict(
+            n_results=len(results),
+            n_latecomers=incorrect_iteration,
+            time_spent=sum(times),
+            mean_time=sum(times)/len(times),
+            max_time=max(times),
+            min_time=min(times)
+        )
+        
+        return results, logs
