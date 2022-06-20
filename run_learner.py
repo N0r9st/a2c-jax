@@ -226,21 +226,35 @@ def main(args: dict):
         print("WAITING FOR RESULTS")
         list_results, workers_logs  = server.get_job_results(
             current_update, 
-            args['n_packages']*(1 + int(args['negative_sampling'])),
+            args['n_packages'],
+            negative=False,
             )
-        print("GOT SOME STUFF FROM WORKERS")
+        list_results, workers_logs  = server.get_job_results(
+            current_update, 
+            args['n_packages'],
+            negative=True,
+            )
+        
         original_experience = stack_experiences(exp_list)
         
         mc_oar = jax.tree_util.tree_map(
             lambda *dicts: jnp.concatenate(dicts, axis=0),*[x['mc_oar'] for x in list_results],)
+        
+        if args['negative_sampling']:
+            list_negative_results, _  = server.get_job_results(
+                current_update, 
+                args['n_packages'],
+                negative=True,
+                )
+            negative_oar = jax.tree_util.tree_map(
+            lambda *dicts: jnp.concatenate(dicts, axis=0),*[x['mc_oar'] for x in list_negative_results],)
 
-        #----------------------------------------------------------------
-        #                       NEGATIVES SAMPLING
-        #----------------------------------------------------------------
-        negative_oar = None
+        else: negative_oar = None
+        
+        print("GOT SOME STUFF FROM WORKERS")
+        
         base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
 
-        # mc_oar = process_mc_rollout_output(state.apply_fn, state.params, mc_experience, args['train_constants'])
         oar = dict(
             observations=jnp.concatenate((base_oar['observations'], mc_oar['observations']), axis=0),
             actions=jnp.concatenate((base_oar['actions'], mc_oar['actions']), axis=0),
