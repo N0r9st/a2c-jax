@@ -32,7 +32,6 @@ POLICY_CLASSES = {
     'DiagGaussianStateDependentPolicy': DiagGaussianStateDependentPolicy,
 }
 
-N_PACKAGES = 8
 
 def _policy_fn(prngkey, observation, params, apply_fn, determenistic=False):
     values, (means, log_stds) = apply_fn({'params': params}, observation)
@@ -160,14 +159,14 @@ def main(args: dict):
         sampling_masks = []
         no_sampling_masks = []
 
-        for npgk in range(N_PACKAGES):
+        for npgk in range(args['n_packages']):
 
             prngkey, _ = jax.random.split(prngkey)
             next_obs_and_dones, experience = collect_experience(
                 prngkey, 
                 next_obs_and_dones, 
                 envs, 
-                num_steps=args['num_steps']//N_PACKAGES, 
+                num_steps=args['num_steps']//args['n_packages'], 
                 policy_fn=policy_fn,)
             exp_list.append(experience)
 
@@ -179,7 +178,7 @@ def main(args: dict):
                 add_args['advantages'] = advs
                 add_args['sampling_prob_temp'] = args['sampling_prob_temp']
             sampled_exp, not_selected_observations, sampling_mask, no_sampling_mask = select_random_states(
-                prngkey, args['n_samples']//N_PACKAGES, 
+                prngkey, args['n_samples']//args['n_packages'], 
                 experience, type=args['sampling_type'], **add_args)
 
             sampling_masks.append(sampling_mask)
@@ -218,7 +217,7 @@ def main(args: dict):
             server.add_jobs(to_worker)
 
         print("WAITING FOR RESULTS")
-        list_results, workers_logs  = server.get_job_results(current_update, N_PACKAGES)
+        list_results, workers_logs  = server.get_job_results(current_update, args['n_packages'])
         print("GOT SOME STUFF FROM WORKERS")
         original_experience = stack_experiences(exp_list)
         
