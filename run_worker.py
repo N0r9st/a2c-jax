@@ -50,7 +50,7 @@ def _worker(global_args, k_remotes, parent_remote, spaces, device, add_args) -> 
                 mc_oar=mc_oar,
             )
             server.commit_result(result, negative=args['firstrandom'])
-            print(f'COMMITED RESULT FROM {iteration} ITERATION')
+            print(f'COMMITED RESULT FROM {iteration} ITERATION, NEGATIVE=', args['firstrandom'], sep="")
         except EOFError:
             break
 

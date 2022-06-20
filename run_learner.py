@@ -229,11 +229,6 @@ def main(args: dict):
             args['n_packages'],
             negative=False,
             )
-        list_results, workers_logs  = server.get_job_results(
-            current_update, 
-            args['n_packages'],
-            negative=True,
-            )
         
         original_experience = stack_experiences(exp_list)
         
@@ -252,7 +247,7 @@ def main(args: dict):
         else: negative_oar = None
         
         print("GOT SOME STUFF FROM WORKERS")
-        
+
         base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
 
         oar = dict(
