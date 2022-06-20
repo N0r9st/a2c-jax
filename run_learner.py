@@ -39,6 +39,8 @@ def _policy_fn(prngkey, observation, params, apply_fn, determenistic=False):
     return values, sampled_actions
 
 def main(args: dict):
+    if args['type']!='sample-KM-rollouts-fast':
+        raise NotImplementedError
     args['async'] = True
     if not args['split_between_devices']:
         os.environ['CUDA_VISIBLE_DEVICES'] = args['device']
@@ -230,23 +232,15 @@ def main(args: dict):
         negative_oar = None
         base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
 
-        if args['type'] != 'standart':
-            # mc_oar = process_mc_rollout_output(state.apply_fn, state.params, mc_experience, args['train_constants'])
-            oar = dict(
-                observations=jnp.concatenate((base_oar['observations'], mc_oar['observations']), axis=0),
-                actions=jnp.concatenate((base_oar['actions'], mc_oar['actions']), axis=0),
-                returns=jnp.concatenate((base_oar['returns'], mc_oar['returns']), axis=0),
-                )
-            not_sampled_observations = jnp.concatenate(not_selected_observations_list, axis=0)
-            sampling_masks = jnp.stack(sampling_masks)
-            no_sampling_masks = jnp.stack(no_sampling_masks)
-        else:
-            negative_oar = None
-            mc_oar = None
-            oar = base_oar
-            not_sampled_observations = base_oar['observations'].reshape((-1, base_oar['observations'].shape[-1]))
-            sampling_masks = None
-            no_sampling_masks = None
+        # mc_oar = process_mc_rollout_output(state.apply_fn, state.params, mc_experience, args['train_constants'])
+        oar = dict(
+            observations=jnp.concatenate((base_oar['observations'], mc_oar['observations']), axis=0),
+            actions=jnp.concatenate((base_oar['actions'], mc_oar['actions']), axis=0),
+            returns=jnp.concatenate((base_oar['returns'], mc_oar['returns']), axis=0),
+            )
+        not_sampled_observations = jnp.concatenate(not_selected_observations_list, axis=0)
+        sampling_masks = jnp.stack(sampling_masks)
+        no_sampling_masks = jnp.stack(no_sampling_masks)
 
         prngkey, _ = jax.random.split(prngkey)
         q_train_oar, q_test_oar = general_train_test_split(
