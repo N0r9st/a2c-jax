@@ -1,32 +1,17 @@
 import functools
 import os
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
-from copy import deepcopy
 import time
 import jax
-import jax.numpy as jnp
-import numpy as np
-import wandb
-import itertools
 import multiprocessing as mp
 
-from jax_a2c.a2c import p_step
-from jax_a2c.q_updates import q_step, train_test_split, test_qf, train_test_split_k_repeat, general_train_test_split
 from jax_a2c.distributions import sample_action_from_normal as sample_action
 from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
-from jax_a2c.evaluation import eval, q_eval
 from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy
-from jax_a2c.utils import (Experience, collect_experience, create_train_state, select_random_states,
-                           process_experience, concat_trajectories, process_base_rollout_output,
-                           stack_experiences, process_rollout_output,  process_mc_rollout_output,
-                           calculate_interactions_per_epoch)
+from jax_a2c.utils import create_train_state
 from jax_a2c.km_mc_traj import km_mc_rollouts
-from jax_a2c.saving import save_state, load_state
-from flax.core import freeze
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
 from multihost.job_server import KLMJobServer
-
-from args import args
 
 POLICY_CLASSES = {
     'DiagGaussianPolicy': DiagGaussianPolicy, 
@@ -65,7 +50,7 @@ def _worker(global_args, k_remotes, parent_remote, spaces, device, add_args) -> 
                 mc_oar=mc_oar,
             )
             server.commit_result(result)
-            print('COMMITED RESULT')
+            print(f'COMMITED RESULT FROM {iteration} ITERATION')
         except EOFError:
             break
 
@@ -119,7 +104,7 @@ def main(args: dict):
     #-----------------------------------------
     if args['num_workers'] is not None:
         add_args = {'policy_fn': _apply_policy_fn}
-        remotes = run_workers(
+        run_workers(
             _worker, 
             args,
             k_envs_fn, 
@@ -135,8 +120,6 @@ def main(args: dict):
     
 if __name__=='__main__':
 
-    
-
+    from args import args
     ctx = mp.get_context("forkserver")
-
     main(args)

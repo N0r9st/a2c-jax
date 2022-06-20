@@ -218,8 +218,16 @@ def main(args: dict):
             print("ADDING JOB")
             server.add_jobs(to_worker)
 
+            if args['negative_sampling']:
+                to_worker['firstrandom'] = True
+                print("ADDING JOB")
+                server.add_jobs(to_worker)
+
         print("WAITING FOR RESULTS")
-        list_results, workers_logs  = server.get_job_results(current_update, args['n_packages'])
+        list_results, workers_logs  = server.get_job_results(
+            current_update, 
+            args['n_packages']*(1 + int(args['negative_sampling'])),
+            )
         print("GOT SOME STUFF FROM WORKERS")
         original_experience = stack_experiences(exp_list)
         
