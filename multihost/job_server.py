@@ -68,22 +68,28 @@ class KLMJobServer:
         """ converts string to whatever was dumps'ed in it """
         return pickle.loads(string)
 
-    def reset_queue(self):
+    def reset_queue(self, prefix=""):
         for key in self.jobs_key, self.results_key, self.negative_results_key:
+            if prefix:
+                key = prefix + "::" + key
             self.redis.delete(key)
         return True
     
     def add_jobs(self, *jobs):
         return self.redis.rpush(self.jobs_key, *map(self.dumps, jobs))
 
-    def commit_result(self, result, negative=False):
+    def commit_result(self, result, negative=False, prefix=""):
         if negative: key = self.negative_results_key
         else: key = self.results_key
+        if prefix:
+            key = prefix + "::" + key
         return self.redis.rpush(key, self.dumps(result))
 
-    def get_result(self, timeout=0, negative=False):
+    def get_result(self, timeout=0, negative=False, prefix=""):
         if negative: key = self.negative_results_key
         else: key = self.results_key
+        if prefix:
+            key = prefix + "::" + key
         payload = self.redis.blpop(key, timeout=timeout)
         if payload is not None: return self.loads(payload[1])
 
@@ -91,16 +97,16 @@ class KLMJobServer:
         payload = self.redis.blpop(self.jobs_key, timeout=timeout)
         return self.loads(payload[1])
 
-    def get_job_results(self, current_iteration, num_expected_jobs, timeout=30, negative=False):
+    def get_job_results(self, current_iteration, num_expected_jobs, timeout=30, negative=False, prefix=""):
         st = time.time()
-        results = [self.get_result(negative=negative)]
+        results = [self.get_result(negative=negative, prefix=prefix)]
         wtd = time.time() - st
         times = [wtd]
         
         incorrect_iteration = 0
         while True:
             st = time.time()
-            result = self.get_result(timeout=timeout, negative=negative)
+            result = self.get_result(timeout=timeout, negative=negative, prefix=prefix)
             wtd = time.time() - st
             times.append(wtd)
             if result is None: break

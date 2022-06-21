@@ -39,6 +39,7 @@ def _policy_fn(prngkey, observation, params, apply_fn, determenistic=False):
     return values, sampled_actions
 
 def main(args: dict):
+    RESULT_PREFIX = str(args)
     if args['type']!='sample-KM-rollouts-fast':
         raise NotImplementedError
     args['async'] = True
@@ -102,14 +103,7 @@ def main(args: dict):
     next_obs_and_dones = (next_obs, np.array(next_obs.shape[0]*[False]))
 
 
-    # -----------------------------------------
-    #            CONNECTING TO REDIS
-    #-----------------------------------------
     
-    server = KLMJobServer(host=args['redis_host'], port=args['redis_port'], password='fuckingpassword')
-
-    server.reset_queue()
-    # ------------------------------------------
 
     if args['load']:
         chkpnt = args['load']
@@ -134,6 +128,20 @@ def main(args: dict):
             wandb_run_id = wandb.run.id
         else:
             wandb.init(project=args['wandb_proj_name'], config=args, id=wandb_run_id, resume="allow")
+
+    # -----------------------------------------
+    #            CONNECTING TO REDIS
+    #-----------------------------------------
+    RESULT_PREFIX = str(args)
+
+    if args['wb_flag']:
+        RESULT_PREFIX += wandb_run_id
+    server = KLMJobServer(host=args['redis_host'], port=args['redis_port'], password='fuckingpassword')
+
+    server.reset_queue()
+    server.reset_queue(prefix=RESULT_PREFIX)
+    
+    # ------------------------------------------
 
     total_updates = args['num_timesteps'] // ( args['num_envs'] * args['num_steps'])
 
@@ -213,6 +221,7 @@ def main(args: dict):
                 train_ret_rms=train_ret_rms,
                 firstrandom=False,
                 iteration=current_update,
+                prefix=RESULT_PREFIX,
                 )
             # remote.send(to_worker)
             print("ADDING JOB")
@@ -228,6 +237,7 @@ def main(args: dict):
             current_update, 
             args['n_packages'],
             negative=False,
+            prefix=RESULT_PREFIX,
             )
         
         original_experience = stack_experiences(exp_list)
@@ -240,6 +250,7 @@ def main(args: dict):
                 current_update, 
                 args['n_packages'],
                 negative=True,
+                prefix=RESULT_PREFIX,
                 )
             negative_oar = jax.tree_util.tree_map(
             lambda *dicts: jnp.concatenate(dicts, axis=0),*[x['mc_oar'] for x in list_negative_results],)

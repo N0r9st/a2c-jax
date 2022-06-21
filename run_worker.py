@@ -43,13 +43,14 @@ def _worker(global_args, k_remotes, parent_remote, spaces, device, add_args) -> 
             print(f'GOT JOB FROM {iteration} ITERATION')
             k_envs.obs_rms = args.pop('train_obs_rms')
             k_envs.ret_rms = args.pop('train_ret_rms')
+            prefix = args.pop('prefix')
             policy_fn = functools.partial(_policy_fn, **(args.pop('policy_fn')))
             mc_oar = km_mc_rollouts_(policy_fn=policy_fn, **args)
             result = dict(
                 iteration=iteration,
                 mc_oar=mc_oar,
             )
-            server.commit_result(result, negative=args['firstrandom'])
+            server.commit_result(result, negative=args['firstrandom'], prefix=prefix)
             print(f'COMMITED RESULT FROM {iteration} ITERATION, NEGATIVE=', args['firstrandom'], sep="")
         except EOFError:
             break
