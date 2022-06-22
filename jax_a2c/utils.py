@@ -22,12 +22,14 @@ Experience = namedtuple(
 
 class QTrainState(TrainState):
     q_fn: Callable = struct.field(pytree_node=False)
+    v_fn: Callable = struct.field(pytree_node=False)
     
 
 def create_train_state(
     prngkey: PRNGKey, 
     policy_model: ModelClass,
     qf_model: ModelClass,
+    vf_model: ModelClass,
     envs: jax_a2c.env_utils.SubprocVecEnv,
     learning_rate: float, 
     decaying_lr: bool, 
@@ -46,6 +48,10 @@ def create_train_state(
     qf_variables = qf_model.init(prngkey, dummy_input, dummy_action)
     qf_params = qf_variables['params']
 
+    prngkey, _ = jax.random.split(prngkey)
+    vf_variables = vf_model.init(prngkey, dummy_input)
+    vf_params = vf_variables['params']
+
     if decaying_lr:
         lr = optax.linear_schedule(
             init_value = learning_rate, end_value=0.,
@@ -59,8 +65,9 @@ def create_train_state(
         )
     state = QTrainState.create(
         apply_fn=policy_model.apply,
-        params={'policy_params': policy_params, 'qf_params': qf_params},
+        params={'policy_params': policy_params, 'qf_params': qf_params, "vf_params": vf_params},
         q_fn=qf_model.apply,
+        v_fn=vf_model.apply,
         tx=tx)
 
     return state

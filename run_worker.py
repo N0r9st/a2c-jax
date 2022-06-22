@@ -7,7 +7,7 @@ import multiprocessing as mp
 
 from jax_a2c.distributions import sample_action_from_normal as sample_action
 from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers_multihost as run_workers
-from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy
+from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy, VFunction, DGPolicy
 from jax_a2c.utils import create_train_state
 from jax_a2c.km_mc_traj import km_mc_rollouts
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
@@ -16,11 +16,12 @@ from multihost.job_server import KLMJobServer
 POLICY_CLASSES = {
     'DiagGaussianPolicy': DiagGaussianPolicy, 
     'DiagGaussianStateDependentPolicy': DiagGaussianStateDependentPolicy,
+    "DGPolicy": DGPolicy,
 }
 def _policy_fn(prngkey, observation, params, apply_fn, determenistic=False):
-    values, (means, log_stds) = apply_fn({'params': params}, observation)
+    (means, log_stds) = apply_fn({'params': params}, observation)
     sampled_actions  = means if determenistic else sample_action(prngkey, means, log_stds)
-    return values, sampled_actions
+    return sampled_actions
 
 def _worker(global_args, k_remotes, parent_remote, spaces, device, add_args) -> None:
     server = KLMJobServer(host=global_args['redis_host'], port=global_args['redis_port'], password='fuckingpassword')
@@ -35,6 +36,8 @@ def _worker(global_args, k_remotes, parent_remote, spaces, device, add_args) -> 
     km_mc_rollouts_ = functools.partial(km_mc_rollouts, k_envs=k_envs)
 
     _policy_fn = jax.jit(add_args['policy_fn'], static_argnames=('determenistic',))
+    v_fn = jax.jit(add_args['v_fn'])
+
     print("WORKER STARTED")
     while True:
         try:
@@ -45,7 +48,7 @@ def _worker(global_args, k_remotes, parent_remote, spaces, device, add_args) -> 
             k_envs.ret_rms = args.pop('train_ret_rms')
             prefix = args.pop('prefix')
             policy_fn = functools.partial(_policy_fn, **(args.pop('policy_fn')))
-            mc_oar = km_mc_rollouts_(policy_fn=policy_fn, **args)
+            mc_oar = km_mc_rollouts_(policy_fn=policy_fn, v_fn=v_fn, vf_params=args.pop('vf_params'), **args)
             result = dict(
                 iteration=iteration,
                 mc_oar=mc_oar,
@@ -82,6 +85,7 @@ def main(args: dict):
         init_log_std=args['init_log_std'])
 
     qf_model = QFunction(hidden_sizes=args['q_hidden_sizes'], action_dim=envs.action_space.shape[0],)
+    vf_model = VFunction(hidden_sizes=args['q_hidden_sizes'])
 
     prngkey = jax.random.PRNGKey(args['seed'])
 
@@ -89,6 +93,7 @@ def main(args: dict):
         prngkey,
         policy_model,
         qf_model,
+        vf_model,
         envs,
         learning_rate=args['lr'],
         decaying_lr=args['linear_decay'],
@@ -104,7 +109,7 @@ def main(args: dict):
     #            STARTING WORKERS
     #-----------------------------------------
     if args['num_workers'] is not None:
-        add_args = {'policy_fn': _apply_policy_fn}
+        add_args = {'policy_fn': _apply_policy_fn, "v_fn": state.v_fn}
         run_workers(
             _worker, 
             args,

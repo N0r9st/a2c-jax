@@ -19,6 +19,7 @@ def p_loss_fn(
     data_dict,
     prngkey: PRNGKey,
     q_fn: Callable,
+    v_fn: Callable,
     constant_params,
     ):
 
@@ -36,7 +37,8 @@ def p_loss_fn(
     returns = oar['returns']
     action_logprobs, sampled_action_logprobs, values, dist_entropy, log_stds, action_samples = evaluate_actions(
         params['policy_params'], 
-        apply_fn, observations, actions, prngkey)
+        params['vf_params'], 
+        apply_fn, v_fn, observations, actions, prngkey)
 
     advantages = jax.lax.stop_gradient(returns - values)
     if constant_params['equal_importance_ploss']:
@@ -46,7 +48,6 @@ def p_loss_fn(
 
     value_loss = ((returns - values)**2).mean()
     
-
     #----------------------------------------
     #               Q - UPDATE
     #----------------------------------------
@@ -54,13 +55,13 @@ def p_loss_fn(
     if constant_params['return_in_remaining']:
         q_observations = data_dict['not_sampled_observations']
         q_action_samples, q_logprobs, q_values = sample_acts_for_obs(
-            params['policy_params'], apply_fn, 
+            params['policy_params'], params['vf_params'], apply_fn, v_fn,
             prngkey, q_observations, constant_params['K'], constant_params['logstd_stopgrad'])
         q_observations = jnp.concatenate([q_observations]*constant_params['K'], axis=0)
     else:
         q_observations = data_dict['base_oar']['observations']
         q_action_samples, q_logprobs, q_values = sample_acts_for_obs(
-            params['policy_params'], apply_fn, 
+            params['policy_params'], params['vf_params'], apply_fn, v_fn,
             prngkey, q_observations, constant_params['K'], constant_params['logstd_stopgrad'])
         q_observations = jnp.concatenate([q_observations]*constant_params['K'], axis=0)
 
@@ -111,6 +112,7 @@ def p_step(state, data_dict, prngkey,
         data_dict,
         prngkey,
         state.q_fn,
+        state.v_fn,
         constant_params,)
     new_state = state.apply_gradients(grads=grads)
     return new_state, (loss, loss_dict)

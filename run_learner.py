@@ -17,7 +17,7 @@ from jax_a2c.distributions import sample_action_from_normal as sample_action
 from jax_a2c.env_utils import make_vec_env
 from jax_a2c.evaluation import eval
 from jax_a2c.policy import (DiagGaussianPolicy,
-                            DiagGaussianStateDependentPolicy, QFunction)
+                            DiagGaussianStateDependentPolicy, QFunction, VFunction, DGPolicy)
 from jax_a2c.q_updates import general_train_test_split, q_step
 from jax_a2c.saving import load_state, save_state
 from jax_a2c.utils import (Experience, calculate_interactions_per_epoch,
@@ -29,11 +29,18 @@ from multihost.job_server import KLMJobServer
 POLICY_CLASSES = {
     'DiagGaussianPolicy': DiagGaussianPolicy, 
     'DiagGaussianStateDependentPolicy': DiagGaussianStateDependentPolicy,
+    "DGPolicy": DGPolicy,
 }
 
 
 def _policy_fn(prngkey, observation, params, apply_fn, determenistic=False):
-    values, (means, log_stds) = apply_fn({'params': params}, observation)
+    means, log_stds = apply_fn({'params': params}, observation)
+    sampled_actions  = means if determenistic else sample_action(prngkey, means, log_stds)
+    return sampled_actions
+
+def _value_and_policy_fn(prngkey, observation, params, vf_params, apply_fn, v_fn, determenistic=False):
+    means, log_stds = apply_fn({'params': params}, observation)
+    values = v_fn({'params': vf_params}, observation)
     sampled_actions  = means if determenistic else sample_action(prngkey, means, log_stds)
     return values, sampled_actions
 
@@ -79,6 +86,7 @@ def main(args: dict):
         init_log_std=args['init_log_std'])
 
     qf_model = QFunction(hidden_sizes=args['q_hidden_sizes'], action_dim=envs.action_space.shape[0],)
+    vf_model = VFunction(hidden_sizes=args['q_hidden_sizes'])
 
     prngkey = jax.random.PRNGKey(args['seed'])
 
@@ -86,6 +94,7 @@ def main(args: dict):
         prngkey,
         policy_model,
         qf_model,
+        vf_model,
         envs,
         learning_rate=args['lr'],
         decaying_lr=args['linear_decay'],
@@ -96,7 +105,13 @@ def main(args: dict):
     )
 
     _apply_policy_fn = functools.partial(_policy_fn, apply_fn=state.apply_fn, determenistic=False)
-    _jit_policy_fn = jax.jit(_apply_policy_fn)
+    _apply_value_and_policy_fn = functools.partial(
+        _value_and_policy_fn, 
+        apply_fn=state.apply_fn,
+        v_fn=state.v_fn,
+        determenistic=False)
+
+    jit_value_and_policy_fn = jax.jit(_apply_value_and_policy_fn)
 
     next_obs = envs.reset()
     next_obs_and_dones = (next_obs, np.array(next_obs.shape[0]*[False]))
@@ -136,7 +151,7 @@ def main(args: dict):
     if args['wb_flag']:
         RESULT_PREFIX += wandb_run_id
     server = KLMJobServer(host=args['redis_host'], port=args['redis_port'], password='fuckingpassword')
-
+    print(RESULT_PREFIX)
     server.reset_queue()
     server.reset_queue(prefix=RESULT_PREFIX)
     
@@ -152,7 +167,10 @@ def main(args: dict):
     interactions_per_epoch = calculate_interactions_per_epoch(args)
     for current_update in range(start_update, total_updates):
         st = time.time()
-        policy_fn = functools.partial(_jit_policy_fn, params=state.params['policy_params'])
+        ready_value_and_policy_fn = functools.partial(
+            jit_value_and_policy_fn, 
+            params=state.params['policy_params'],
+            vf_params=state.params['vf_params'])
         if current_update%args['eval_every']==0:
             eval_envs.obs_rms = deepcopy(envs.obs_rms)
             _, eval_return = eval(state.apply_fn, state.params['policy_params'], eval_envs)
@@ -176,7 +194,7 @@ def main(args: dict):
                 next_obs_and_dones, 
                 envs, 
                 num_steps=args['num_steps']//args['n_packages'], 
-                policy_fn=policy_fn,)
+                policy_fn=ready_value_and_policy_fn,)
             exp_list.append(experience)
 
 
@@ -207,21 +225,23 @@ def main(args: dict):
             )
             prngkey, _ = jax.random.split(prngkey)
             to_worker = dict(
-                prngkey=prngkey,
-                experience=sampled_exp,
-                gamma=args['gamma'],
-                policy_fn=dict(
-                    params=state.params['policy_params'], 
-                    determenistic=args['km_determenistic']),
-                max_steps=args['L'],
-                K=args['K'],
-                M=args['M'],
-                train_obs_rms=train_obs_rms,
-                train_ret_rms=train_ret_rms,
-                firstrandom=False,
-                iteration=current_update,
-                prefix=RESULT_PREFIX,
-                )
+                    prngkey=prngkey,
+                    experience=sampled_exp,
+                    gamma=args['gamma'],
+                    policy_fn=dict(
+                        params=state.params['policy_params'], 
+                        determenistic=args['km_determenistic']),
+                    # v_fn=dict(params=state.params["vf_params"]),
+                    vf_params=state.params["vf_params"],
+                    max_steps=args['L'],
+                    K=args['K'],
+                    M=args['M'],
+                    train_obs_rms=train_obs_rms,
+                    train_ret_rms=train_ret_rms,
+                    firstrandom=False,
+                    iteration=current_update,
+                    prefix=RESULT_PREFIX,
+                    )
             # remote.send(to_worker)
             print("ADDING JOB")
             server.add_jobs(to_worker)

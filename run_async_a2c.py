@@ -15,7 +15,7 @@ from jax_a2c.q_updates import q_step, train_test_split, test_qf, train_test_spli
 from jax_a2c.distributions import sample_action_from_normal as sample_action
 from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
 from jax_a2c.evaluation import eval, q_eval
-from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy
+from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy, VFunction, DGPolicy
 from jax_a2c.utils import (Experience, collect_experience, create_train_state, select_random_states,
                            process_experience, concat_trajectories, process_base_rollout_output,
                            stack_experiences, process_rollout_output,  process_mc_rollout_output,
@@ -28,9 +28,16 @@ from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
 POLICY_CLASSES = {
     'DiagGaussianPolicy': DiagGaussianPolicy, 
     'DiagGaussianStateDependentPolicy': DiagGaussianStateDependentPolicy,
+    "DGPolicy": DGPolicy,
 }
 def _policy_fn(prngkey, observation, params, apply_fn, determenistic=False):
-    values, (means, log_stds) = apply_fn({'params': params}, observation)
+    means, log_stds = apply_fn({'params': params}, observation)
+    sampled_actions  = means if determenistic else sample_action(prngkey, means, log_stds)
+    return sampled_actions
+
+def _value_and_policy_fn(prngkey, observation, params, vf_params, apply_fn, v_fn, determenistic=False):
+    means, log_stds = apply_fn({'params': params}, observation)
+    values = v_fn({'params': vf_params}, observation)
     sampled_actions  = means if determenistic else sample_action(prngkey, means, log_stds)
     return values, sampled_actions
 
@@ -45,6 +52,7 @@ def _worker(remote, k_remotes, parent_remote, spaces, device, add_args) -> None:
     km_mc_rollouts_ = functools.partial(km_mc_rollouts, k_envs=k_envs)
 
     _policy_fn = jax.jit(add_args['policy_fn'], static_argnames=('determenistic',))
+    v_fn = jax.jit(add_args['v_fn'])
 
     while True:
         try:
@@ -52,7 +60,7 @@ def _worker(remote, k_remotes, parent_remote, spaces, device, add_args) -> None:
             k_envs.obs_rms = args.pop('train_obs_rms')
             k_envs.ret_rms = args.pop('train_ret_rms')
             policy_fn = functools.partial(_policy_fn, **(args.pop('policy_fn')))
-            out = km_mc_rollouts_(policy_fn=policy_fn, **args)
+            out = km_mc_rollouts_(policy_fn=policy_fn, v_fn=v_fn, vf_params=args.pop('vf_params'), **args)
             remote.send(out)
         except EOFError:
             break
@@ -104,6 +112,7 @@ def main(args: dict):
         init_log_std=args['init_log_std'])
 
     qf_model = QFunction(hidden_sizes=args['q_hidden_sizes'], action_dim=envs.action_space.shape[0],)
+    vf_model = VFunction(hidden_sizes=args['q_hidden_sizes'])
 
     prngkey = jax.random.PRNGKey(args['seed'])
 
@@ -111,6 +120,7 @@ def main(args: dict):
         prngkey,
         policy_model,
         qf_model,
+        vf_model,
         envs,
         learning_rate=args['lr'],
         decaying_lr=args['linear_decay'],
@@ -121,7 +131,13 @@ def main(args: dict):
     )
 
     _apply_policy_fn = functools.partial(_policy_fn, apply_fn=state.apply_fn, determenistic=False)
-    _jit_policy_fn = jax.jit(_apply_policy_fn)
+    _apply_value_and_policy_fn = functools.partial(
+        _value_and_policy_fn, 
+        apply_fn=state.apply_fn,
+        v_fn=state.v_fn,
+        determenistic=False)
+
+    jit_value_and_policy_fn = jax.jit(_apply_value_and_policy_fn)
 
     next_obs = envs.reset()
     next_obs_and_dones = (next_obs, np.array(next_obs.shape[0]*[False]))
@@ -132,7 +148,7 @@ def main(args: dict):
     #-----------------------------------------
     if args['type'] != 'standart':
         if args['num_workers'] is not None:
-            add_args = {'policy_fn': _apply_policy_fn}
+            add_args = {'policy_fn': _apply_policy_fn, "v_fn": state.v_fn}
             remotes = run_workers(
                 _worker, 
                 k_envs_fn, 
@@ -177,18 +193,15 @@ def main(args: dict):
     interactions_per_epoch = calculate_interactions_per_epoch(args)
     for current_update in range(start_update, total_updates):
         st = time.time()
-        policy_fn = functools.partial(_jit_policy_fn, params=state.params['policy_params'])
+        ready_value_and_policy_fn = functools.partial(
+            jit_value_and_policy_fn, 
+            params=state.params['policy_params'],
+            vf_params=state.params['vf_params'])
+
         if current_update%args['eval_every']==0:
             eval_envs.obs_rms = deepcopy(envs.obs_rms)
             _, eval_return = eval(state.apply_fn, state.params['policy_params'], eval_envs)
             print(f'Updates {current_update}/{total_updates}. Eval return: {eval_return}. Epoch_time: {epoch_time}.')
-
-            if args['eval_with_q']:
-                eval_envs.obs_rms = deepcopy(envs.obs_rms)
-                _, q_eval_return = q_eval(state.apply_fn, state.params['policy_params'], 
-                                        state.q_fn, state.params['qf_params'], eval_envs)
-                print(f'Q-eval return: {q_eval_return}')
-
         #------------------------------------------------
         #              WORKER ROLLOUTS
         #------------------------------------------------
@@ -208,10 +221,10 @@ def main(args: dict):
                     next_obs_and_dones, 
                     envs, 
                     num_steps=args['num_steps']//args['num_workers'], 
-                    policy_fn=policy_fn,)
+                    policy_fn=ready_value_and_policy_fn)
                 exp_list.append(experience)
 
-
+                
                 
                 add_args = {}
                 if args['sampling_type']=='adv':
@@ -247,6 +260,8 @@ def main(args: dict):
                     policy_fn=dict(
                         params=state.params['policy_params'], 
                         determenistic=args['km_determenistic']),
+                    # v_fn=dict(params=state.params["vf_params"]),
+                    vf_params=state.params["vf_params"],
                     max_steps=args['L'],
                     K=args['K'],
                     M=args['M'],
@@ -256,14 +271,7 @@ def main(args: dict):
                     )
                 remote.send(to_worker)
             original_experience = stack_experiences(exp_list)
-            # import pickle
-            # with open('recvd2.pkl', 'wb') as f:
-            #     pickle.dump(remote.recv(), f)
-            # exit()
-            # mc_experience =  jax.tree_util.tree_map(
-            #     lambda *dicts: jnp.stack(dicts),
-            #     *[remote.recv() for remote in remotes],
-            #     )
+
             mc_oar = jax.tree_util.tree_map(
                 lambda *dicts: jnp.concatenate(dicts, axis=0),
                 *[remote.recv() for remote in remotes],
@@ -309,7 +317,7 @@ def main(args: dict):
                 next_obs_and_dones, 
                 envs, 
                 num_steps=args['num_steps'], 
-                policy_fn=policy_fn,)
+                policy_fn=ready_value_and_policy_fn,)
         
         base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
 
@@ -352,7 +360,7 @@ def main(args: dict):
             'qf_update_batch_size':args['train_constants']['qf_update_batch_size'],
             'q_train_len':len(q_train_oar['observations']),
             })
-        
+
         if args['train_constants']['q_updates'] != 'none':
             state, (q_loss, q_loss_dict) = q_step(
                 state, 

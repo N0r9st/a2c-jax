@@ -20,7 +20,7 @@ def eval(
     cumdones = jnp.zeros(shape=(observation.shape[0],))
     dones = [np.array(observation.shape[0]*[False])]
     for _ in range(1000):
-        values, (action_means, action_log_stds) = apply_fn({'params': params}, observation)
+        (action_means, action_log_stds) = apply_fn({'params': params}, observation)
         observation, reward, done, info = env.step(action_means)
         cumdones += done
         total_reward.append(env.old_reward) 
@@ -54,7 +54,7 @@ def q_eval(
         prngkey, _ = jax.random.split(prngkey)
         # observation = jnp.concatenate([observation for _ in range(10)], axis=0)
 
-        values, (action_means, action_log_stds) = apply_fn({'params': params}, observation)
+        (action_means, action_log_stds) = apply_fn({'params': params}, observation)
 
         action_means_rep = jnp.concatenate([action_means for _ in range(N)], axis=0)
         action_log_stds_rep = jnp.concatenate([action_log_stds for _ in range(N)], axis=0)
@@ -77,14 +77,3 @@ def q_eval(
             break
     masks = jnp.cumprod(1-jnp.array(dones), axis=0)[:-1]
     return observation, (jnp.array(total_reward)*masks).sum(axis=0).mean().item()
-
-
-def _q_policy_fn(prngkey, observations, params, apply_fn, q_params, q_fn):
-    observations = jnp.concatenate([observations for _ in range(10)], axis=0)
-    values, (means, log_stds) = apply_fn({'params': params}, observations)
-    sampled_actions  = sample_action(prngkey, means, log_stds)# .reshape(10, observations.shape[0]//10, -1)
-    q_vals = apply_fn({'params': params}, observations).reshape(10, observations.shape[0]//10, -1)
-    to_select = q_vals.argmax(0)
-    sampled_actions = jnp.take_along_axis(sampled_actions, indices=to_select[None, :, None], axis=0)[0]
-    values = jnp.take_along_axis(values, indices=to_select[None, :, None], axis=0)[0]
-    return values, sampled_actions

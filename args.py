@@ -1,7 +1,7 @@
 import argparse
 possible_types = ['sample-KM-rollouts-fast', 'standart']
 possible_q_updates = [None, 'rep', 'log', 'none']
-possible_policy_types = ['DiagGaussianPolicy', 'DiagGaussianStateDependentPolicy']
+possible_policy_types = ["DGPolicy"]
 possible_sampling_types = ['uniform', 'adv',]
 possible_split_types = ['full_tt_split',
                         'new_full_tt_split',
@@ -53,7 +53,7 @@ def parse_args():
 
     parser.add_argument('--init-log-std', type=float, default=0.)
     parser.add_argument('--alpha', type=float, default=0.)
-    parser.add_argument('--policy-type', type=str, default='DiagGaussianPolicy')
+    parser.add_argument('--policy-type', type=str, default='DGPolicy')
 
     parser.add_argument('--sampling-type', type=str, default='uniform')
     parser.add_argument('--sampling-prob-temp', type=float, default=1)

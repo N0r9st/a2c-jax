@@ -23,8 +23,9 @@ def sample_action_from_normal(prngkey, normal_means, log_normal_stds):
     normal_samples = normal_means + normal_stds * jax.random.normal(prngkey, shape=normal_means.shape)
     return normal_samples
 
-def evaluate_actions_norm(params, apply_fn, observations, actions, prngkey):
-    values, (means, log_stds) = apply_fn({'params': params}, observations)
+def evaluate_actions_norm(params, vf_params, apply_fn, v_fn, observations, actions, prngkey):
+    (means, log_stds) = apply_fn({'params': params}, observations)
+    values = v_fn({"params": vf_params}, observations)
     stds = jnp.exp(log_stds)
     pre_tanh_logprobs = -(actions-means)**2/(2*stds**2) - jnp.log(2*jnp.pi)/2 - log_stds
     action_logprobs = (pre_tanh_logprobs).sum(axis=-1)
@@ -36,10 +37,10 @@ def evaluate_actions_norm(params, apply_fn, observations, actions, prngkey):
     # --------
     return action_logprobs, sampled_action_logprobs, values, dist_entropy, log_stds, action_samples  
     
-@functools.partial(jax.jit, static_argnames=('apply_fn', 'K', 'logstd_stopgrad'))
-def sample_acts_for_obs(params, apply_fn, prngkey, observations, K, logstd_stopgrad):
-    values, (means, log_stds) = apply_fn({'params': params}, observations)
-
+@functools.partial(jax.jit, static_argnames=('apply_fn', "v_fn", 'K', 'logstd_stopgrad'))
+def sample_acts_for_obs(params, vf_params, apply_fn, v_fn, prngkey, observations, K, logstd_stopgrad):
+    (means, log_stds) = apply_fn({'params': params}, observations)
+    values = v_fn({"params": vf_params}, observations)
     if logstd_stopgrad:
         log_stds = jax.lax.stop_gradient(log_stds)
     log_stds = jnp.concatenate([log_stds]*K, axis=0)

@@ -10,7 +10,7 @@ def repeat(array, K):
     repeated = jnp.concatenate([array for _ in range(K)], axis=0) 
     return repeated# .reshape((repeated.shape[1]*repeated.shape[0],) + repeated.shape[2:])
 
-def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_steps=1000, firstrandom=False):
+def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, v_fn, vf_params, gamma, K, M, max_steps=1000, firstrandom=False):
     observations = experience.observations # (num_steps, num_envs, obs_shape)
     dones = experience.dones
     states = experience.states
@@ -26,7 +26,7 @@ def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_step
         flat_actions = jax.random.uniform(prngkey, minval=k_envs.action_space.low, maxval=k_envs.action_space.high, 
         shape=flat_observations.shape[:-1] + k_envs.action_space.shape)
     else:
-        _, flat_actions = policy_fn(prngkey, flat_observations)
+        flat_actions = policy_fn(prngkey, flat_observations)
 
     m_flat_observations = jnp.concatenate([flat_observations for _ in range(M)], axis=0)
     # (K * in_states, obs_shape) -> (M * K * in_states, obs_shape)
@@ -55,7 +55,7 @@ def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_step
             ob = next_ob
             _, prngkey = jax.random.split(prngkey)
             if l != 0:                
-                _, acts = policy_fn(prngkey, ob) 
+                acts = policy_fn(prngkey, ob) 
             acts = np.array(acts)
             next_ob, rews, d, info = k_envs.step(acts)
             all_rewards_array[l, slc: slc + num_envs] = rews
@@ -68,7 +68,7 @@ def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, gamma, K, M, max_step
             if cumdones.all():
                 break
         
-        bootstrapped_values, _ = policy_fn(prngkey, next_ob) # ???
+        bootstrapped_values = v_fn({"params": vf_params,}, next_ob) # ???
         all_boot_list.append(bootstrapped_values)
 
     all_boot_list = jnp.concatenate(all_boot_list)
