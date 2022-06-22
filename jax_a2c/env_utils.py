@@ -168,7 +168,7 @@ class DummySubprocVecEnv(SubprocVecEnv):
         self.observation_space = None
         self.action_space = None
 
-def run_workers(worker, global_args, k_envs_fn, num_workers, spaces, ctx, split_between_devices, add_args: dict):
+def run_workers_multihost(worker, global_args, k_envs_fn, num_workers, spaces, ctx, split_between_devices, add_args: dict):
     remotes, work_remotes = zip(*[ctx.Pipe() for _ in range(num_workers)])
     processes = []
     if split_between_devices:
@@ -186,6 +186,30 @@ def run_workers(worker, global_args, k_envs_fn, num_workers, spaces, ctx, split_
         k_remotes = _k_envs.remotes
         del _k_envs
         args1 = (global_args, k_remotes, remote, spaces, device, add_args)
+        process = ctx.Process(target=worker, args=args1, daemon=True)
+        process.start()
+        processes.append(process)
+        work_remote.close()
+    return remotes
+
+def run_workers(worker, k_envs_fn, num_workers, spaces, ctx, split_between_devices, add_args: dict):
+    remotes, work_remotes = zip(*[ctx.Pipe() for _ in range(num_workers)])
+    processes = []
+    if split_between_devices:
+        available_devices = np.arange(jax.device_count())
+        print(f"{jax.device_count()} devices are available")
+        devices = list(reversed(np.repeat(available_devices, np.ceil(num_workers/len(available_devices)))))
+    else:
+        devices = [0]*num_workers
+
+    where_processes = collections.Counter(devices[:num_workers])
+    print('Processes per device:')
+    print(where_processes)
+    for work_remote, remote, env_fn, device in zip(work_remotes, remotes, itertools.repeat(k_envs_fn), devices):
+        _k_envs = env_fn()
+        k_remotes = _k_envs.remotes
+        del _k_envs
+        args1 = (work_remote, k_remotes, remote, spaces, device, add_args)
         process = ctx.Process(target=worker, args=args1, daemon=True)
         process.start()
         processes.append(process)
