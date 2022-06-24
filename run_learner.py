@@ -152,7 +152,6 @@ def main(args: dict):
         RESULT_PREFIX += wandb_run_id
     server = KLMJobServer(host=args['redis_host'], port=args['redis_port'], password='fuckingpassword')
     print(RESULT_PREFIX)
-    server.reset_queue()
     server.reset_queue(prefix=RESULT_PREFIX)
     
     # ------------------------------------------
@@ -311,7 +310,8 @@ def main(args: dict):
             'q_train_len':len(q_train_oar['observations']),
             })
         
-        if args['train_constants']['q_updates'] != 'none':
+        if args['train_constants']['q_updates'] is not None:
+            print('qf updated')
             state, (q_loss, q_loss_dict) = q_step(
                 state, 
                 # trajectories, 
