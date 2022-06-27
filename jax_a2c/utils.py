@@ -459,9 +459,7 @@ def process_single_mc_rollout_output(mc_rollouts_exp, constant_params):
         mc_rollouts_returns,
         constant_params['M']
     )
-    # mc_observations, mc_actions, mc_returns = tuple(map(
-    #     lambda x: x.reshape((x.shape[0]*x.shape[1],) + x.shape[2:]), (mc_observations, mc_actions, mc_returns)
-    # ))
+
     return dict(
         observations=mc_observations,
         actions=mc_actions,

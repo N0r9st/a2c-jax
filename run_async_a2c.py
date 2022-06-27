@@ -361,15 +361,17 @@ def main(args: dict):
             'q_train_len':len(q_train_oar['observations']),
             })
 
-        if args['train_constants']['q_updates'] != 'none':
+        if args['train_constants']['q_updates'] is not None:
             state, (q_loss, q_loss_dict) = q_step(
                 state, 
-                # trajectories, 
                 q_train_oar, q_test_oar, # (Experience(original trajectory), List[dicts](kml trajs))
                 prngkey,
                 constant_params=args['train_constants'], jit_q_fn=jit_q_fn
                 )
             state = state.replace(step=current_update)
+        else:
+            q_loss_dict = {}
+
         prngkey, _ = jax.random.split(prngkey)
         p_train_data_dict = {
             'oar': oar,

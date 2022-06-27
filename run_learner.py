@@ -104,7 +104,6 @@ def main(args: dict):
         train_steps=num_transition_steps
     )
 
-    _apply_policy_fn = functools.partial(_policy_fn, apply_fn=state.apply_fn, determenistic=False)
     _apply_value_and_policy_fn = functools.partial(
         _value_and_policy_fn, 
         apply_fn=state.apply_fn,
@@ -288,30 +287,29 @@ def main(args: dict):
         sampling_masks = jnp.stack(sampling_masks)
         no_sampling_masks = jnp.stack(no_sampling_masks)
 
-        prngkey, _ = jax.random.split(prngkey)
-        q_train_oar, q_test_oar = general_train_test_split(
-            base_oar=base_oar,
-            mc_oar=mc_oar,
-            negative_oar=negative_oar,
-            sampling_masks=sampling_masks,
-            no_sampling_masks=no_sampling_masks,
-            prngkey=prngkey,
-            test_ratio=args['train_constants']['qf_test_ratio'],
-            k=args['K'],
-            nw=args['num_workers'],
-            num_steps=args['num_steps'],
-            num_envs=args['num_envs'],
-            use_base_traj_for_q=args['use_base_traj_for_q'],
-            split_type=args['split_type'],          
-        )
-
-        args['train_constants'] = args['train_constants'].copy({
-            'qf_update_batch_size':args['train_constants']['qf_update_batch_size'],
-            'q_train_len':len(q_train_oar['observations']),
-            })
+        
         
         if args['train_constants']['q_updates'] is not None:
-            print('qf updated')
+            args['train_constants'] = args['train_constants'].copy({
+                        'qf_update_batch_size':args['train_constants']['qf_update_batch_size'],
+                        'q_train_len':len(q_train_oar['observations']),
+                        })
+            prngkey, _ = jax.random.split(prngkey)
+            q_train_oar, q_test_oar = general_train_test_split(
+                base_oar=base_oar,
+                mc_oar=mc_oar,
+                negative_oar=negative_oar,
+                sampling_masks=sampling_masks,
+                no_sampling_masks=no_sampling_masks,
+                prngkey=prngkey,
+                test_ratio=args['train_constants']['qf_test_ratio'],
+                k=args['K'],
+                nw=args['num_workers'],
+                num_steps=args['num_steps'],
+                num_envs=args['num_envs'],
+                use_base_traj_for_q=args['use_base_traj_for_q'],
+                split_type=args['split_type'],          
+            )
             state, (q_loss, q_loss_dict) = q_step(
                 state, 
                 # trajectories, 
@@ -320,6 +318,9 @@ def main(args: dict):
                 constant_params=args['train_constants'], jit_q_fn=jit_q_fn
                 )
             state = state.replace(step=current_update)
+        else:
+            q_loss_dict = {}
+
         prngkey, _ = jax.random.split(prngkey)
         p_train_data_dict = {
             'oar': oar,
