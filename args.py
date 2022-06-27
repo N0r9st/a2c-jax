@@ -101,6 +101,7 @@ def parse_args():
     parser.add_argument('--redis-host', type=str, default='*')
     parser.add_argument('--redis-port', type=int, default=6951)
     parser.add_argument('--n-packages', type=int, default=8)
+    parser.add_argument('--verbose', action='store_true', default=False)
 
 
     args = parser.parse_args()
@@ -264,6 +265,7 @@ def update(args, cmd_args):
     args['redis_host'] = cmd_args.redis_host
     args['redis_port'] = cmd_args.redis_port
     args['n_packages'] = cmd_args.n_packages
+    args['verbose'] = cmd_args.verbose
     return args
 
 args = update(args, cmd_args)

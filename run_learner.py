@@ -59,7 +59,6 @@ def main(args: dict):
     epoch_times = []
     epoch_time = 0
     eval_return = 0
-    q_eval_return = 0
 
     envs = make_vec_env(
         name=args['env_name'], 
@@ -164,16 +163,24 @@ def main(args: dict):
 
     interactions_per_epoch = calculate_interactions_per_epoch(args)
     for current_update in range(start_update, total_updates):
+        time_base_collection_and_sending = 0
+        time_total_rollouts = 0
+        time_q_updates = 0
+        time_policy_updates = 0
+        time_evaluation = 0
+
         st = time.time()
         ready_value_and_policy_fn = functools.partial(
             jit_value_and_policy_fn, 
             params=state.params['policy_params'],
             vf_params=state.params['vf_params'])
+        
+        _st = time.time()
         if current_update%args['eval_every']==0:
             eval_envs.obs_rms = deepcopy(envs.obs_rms)
             _, eval_return = eval(state.apply_fn, state.params['policy_params'], eval_envs)
             print(f'Updates {current_update}/{total_updates}. Eval return: {eval_return}. Epoch_time: {epoch_time}.')
-
+        time_evaluation = time.time() - _st
         #------------------------------------------------
         #              WORKER ROLLOUTS
         #------------------------------------------------
@@ -184,8 +191,9 @@ def main(args: dict):
         sampling_masks = []
         no_sampling_masks = []
 
+        _st = time.time()
         for npgk in range(args['n_packages']):
-
+            
             prngkey, _ = jax.random.split(prngkey)
             next_obs_and_dones, experience = collect_experience(
                 prngkey, 
@@ -248,6 +256,7 @@ def main(args: dict):
                 to_worker['firstrandom'] = True
                 print("ADDING JOB")
                 server.add_jobs(to_worker)
+        time_base_collection_and_sending = time.time() - _st
 
         print("WAITING FOR RESULTS")
         list_results, workers_logs  = server.get_job_results(
@@ -256,6 +265,7 @@ def main(args: dict):
             negative=False,
             prefix=RESULT_PREFIX,
             )
+        time_total_rollouts = time.time() - _st
         
         original_experience = stack_experiences(exp_list)
         
@@ -288,7 +298,7 @@ def main(args: dict):
         no_sampling_masks = jnp.stack(no_sampling_masks)
 
         
-        
+        _st = time.time()
         if args['train_constants']['q_updates'] is not None:
             args['train_constants'] = args['train_constants'].copy({
                         'qf_update_batch_size':args['train_constants']['qf_update_batch_size'],
@@ -320,7 +330,10 @@ def main(args: dict):
             state = state.replace(step=current_update)
         else:
             q_loss_dict = {}
+        time_q_updates = time.time() - _st
+        
 
+        _st = time.time()
         prngkey, _ = jax.random.split(prngkey)
         p_train_data_dict = {
             'oar': oar,
@@ -334,6 +347,8 @@ def main(args: dict):
             prngkey,
             constant_params=args['train_constants'],
             )
+        time_policy_updates = time.time() - _st
+
         if args['save'] and (current_update % args['save_every']):
             additional = {}
             additional['obs_rms'] = deepcopy(envs.obs_rms)
@@ -349,6 +364,11 @@ def main(args: dict):
                 'time/updates': current_update, 
                 'time/time': epoch_time,
                 'time/num_interactions': interactions_per_epoch * current_update,
+                "time/time_base_collection_and_sending": time_base_collection_and_sending,
+                "time/time_total_rollouts" : time_total_rollouts,
+                "time/time_policy_updates": time_policy_updates,
+                "time/time_q_updates": time_q_updates,
+                "time/time_evaluation": time_evaluation,
                 'evaluation/score': eval_return,
                 'evaluation/train_score': envs.get_last_return().mean()}, 
                 commit=False, step=current_update)
@@ -361,7 +381,20 @@ def main(args: dict):
             wandb.log({'q-training/' + k: v for k, v in q_loss_dict.items()}, step=current_update)
             wandb.log({'multihost/' + k: v for k, v in workers_logs.items()}, step=current_update)
 
-
+        if args['verbose']:
+            print({
+                'time/timestep': timestep, 
+                'time/updates': current_update, 
+                'time/time': epoch_time,
+                'time/num_interactions': interactions_per_epoch * current_update,
+                "time/time_base_collection_and_sending": time_base_collection_and_sending,
+                "time/time_total_rollouts" : time_total_rollouts,
+                "time/time_policy_updates": time_policy_updates,
+                "time/time_q_updates": time_q_updates,
+                "time/time_evaluation": time_evaluation,
+                'evaluation/score': eval_return,
+                'evaluation/train_score': envs.get_last_return().mean()})
+                
 if __name__=='__main__':
 
     from args import args
