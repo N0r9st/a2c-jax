@@ -303,7 +303,28 @@ def stack_experiences(exp_list):
     )
 
 
-@jax.jit
+# @jax.jit
+# def flatten_experience(experience: Experience): 
+#     num_steps, num_envs = experience.observations.shape[:2]
+#     return Experience(
+#         observations = experience.observations[:num_steps].reshape((num_envs*num_steps,) + experience.observations.shape[2:]),
+#         actions = experience.actions[:num_steps].reshape((num_envs*num_steps,) + experience.actions.shape[2:]),
+#         rewards = experience.rewards[:num_steps].reshape((num_envs*num_steps,) + experience.rewards.shape[2:]),
+#         values = experience.values[:num_steps].reshape((num_envs*num_steps,) + experience.values.shape[2:]),
+#         dones = experience.dones[:num_steps].reshape((num_envs*num_steps,) + experience.dones.shape[2:]),
+#         states = flatten_list(experience.states[:num_steps]),
+#         next_observations=experience.next_observations.reshape((num_envs*num_steps,) + experience.next_observations.shape[2:])
+#             )
+
+# def select_random_states(prngkey, n, experience, type, **kwargs):
+#     flattened = flatten_experience(experience)
+#     if type=='uniform':
+#         p = None
+#     if type=='adv':
+#         advs = kwargs['advantages'].reshape(-1)
+#         p = jax.nn.softmax((advs**2)/kwargs['sampling_prob_temp'], axis=0)
+#     return select_experience_random(prngkey, n, flattened, p=p)
+
 def flatten_experience(experience: Experience): 
     num_steps, num_envs = experience.observations.shape[:2]
     return Experience(
@@ -316,20 +337,27 @@ def flatten_experience(experience: Experience):
         next_observations=experience.next_observations.reshape((num_envs*num_steps,) + experience.next_observations.shape[2:])
             )
 
+def softmax(x):
+    expx = np.exp(x)
+    return expx / np.sum(expx, axis=-1)[..., None]
+
+
 def select_random_states(prngkey, n, experience, type, **kwargs):
     flattened = flatten_experience(experience)
     if type=='uniform':
         p = None
     if type=='adv':
         advs = kwargs['advantages'].reshape(-1)
-        p = jax.nn.softmax((advs**2)/kwargs['sampling_prob_temp'], axis=0)
+        # p = jax.nn.softmax((advs**2)/kwargs['sampling_prob_temp'], axis=0)
+        p = softmax((advs**2)/kwargs['sampling_prob_temp'])
     return select_experience_random(prngkey, n, flattened, p=p)
 
 # @functools.partial(jax.jit, static_argnames=('replace', 'n'))
 def select_experience_random(prngkey, n, experience, replace=False, p=None): 
     num_states = len(experience[0])
-    choices = jnp.array(jax.random.choice(prngkey, num_states, shape=(n,), replace=replace, p=p))
-    not_selected_indices = jnp.delete(jnp.arange(0, num_states), choices)
+    # choices = jnp.array(jax.random.choice(prngkey, num_states, shape=(n,), replace=replace, p=p))
+    choices = np.random.choice(num_states, size=(n,), replace=replace, p=p)
+    not_selected_indices = np.delete(np.arange(0, num_states), choices)
     selected = Experience(observations=experience.observations[choices],
                     actions=experience.actions[choices],
                     rewards=experience.rewards[choices],
