@@ -108,6 +108,7 @@ def main(args: dict):
         apply_fn=state.apply_fn,
         v_fn=state.v_fn,
         determenistic=False)
+    jit_apply_fn = jax.jit(state.apply_fn)
 
     jit_value_and_policy_fn = jax.jit(_apply_value_and_policy_fn)
 
@@ -167,6 +168,7 @@ def main(args: dict):
         time_base_collection = 0
         time_sending = 0
         time_selecting = 0
+        time_processing_exp = 0
 
 
         time_total_rollouts = 0
@@ -183,7 +185,7 @@ def main(args: dict):
         _st = time.time()
         if current_update%args['eval_every']==0:
             eval_envs.obs_rms = deepcopy(envs.obs_rms)
-            _, eval_return = eval(state.apply_fn, state.params['policy_params'], eval_envs)
+            _, eval_return = eval(jit_apply_fn, state.params['policy_params'], eval_envs)
             print(f'Updates {current_update}/{total_updates}. Eval return: {eval_return}. Epoch_time: {epoch_time}.')
         time_evaluation = time.time() - _st
         #------------------------------------------------
@@ -280,6 +282,7 @@ def main(args: dict):
             )
         time_total_rollouts = time.time() - _st
         
+        _st = time.time()
         original_experience = stack_experiences(exp_list)
         
         mc_oar = jax.tree_util.tree_map(
@@ -299,20 +302,23 @@ def main(args: dict):
         
         print("GOT SOME STUFF FROM WORKERS")
 
-        base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
-
+        
+        base_oar = process_base_rollout_output(jit_apply_fn, state.params, original_experience, args['train_constants'])
+        
         oar = dict(
             observations=jnp.concatenate((base_oar['observations'], mc_oar['observations']), axis=0),
             actions=jnp.concatenate((base_oar['actions'], mc_oar['actions']), axis=0),
             returns=jnp.concatenate((base_oar['returns'], mc_oar['returns']), axis=0),
             )
         not_sampled_observations = jnp.concatenate(not_selected_observations_list, axis=0)
-        sampling_masks = jnp.stack(sampling_masks)
-        no_sampling_masks = jnp.stack(no_sampling_masks)
 
-        
+        time_processing_exp = time.time() - _st
+
         _st = time.time()
         if args['train_constants']['q_updates'] is not None:
+            sampling_masks = jnp.stack(sampling_masks)
+            no_sampling_masks = jnp.stack(no_sampling_masks)
+
             args['train_constants'] = args['train_constants'].copy({
                         'qf_update_batch_size':args['train_constants']['qf_update_batch_size'],
                         'q_train_len':len(q_train_oar['observations']),
@@ -384,6 +390,7 @@ def main(args: dict):
                 "time/time_policy_updates": time_policy_updates,
                 "time/time_q_updates": time_q_updates,
                 "time/time_evaluation": time_evaluation,
+                "time/time_time_processing_exp": time_processing_exp,
                 'evaluation/score': eval_return,
                 'evaluation/train_score': envs.get_last_return().mean()}, 
                 commit=False, step=current_update)
@@ -409,6 +416,7 @@ def main(args: dict):
                 "time/time_policy_updates": time_policy_updates,
                 "time/time_q_updates": time_q_updates,
                 "time/time_evaluation": time_evaluation,
+                "time/time_time_processing_exp": time_processing_exp,
                 'evaluation/score': eval_return,
                 'evaluation/train_score': envs.get_last_return().mean()})
                 
