@@ -13,7 +13,7 @@ def repeat(array, K):
 def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, v_fn, vf_params, gamma, K, M, max_steps=1000, firstrandom=False):
     observations = jnp.array(experience.observations) # (num_steps, num_envs, obs_shape)
     dones = jnp.array(experience.dones)
-    states = jnp.array(experience.states)
+    states = experience.states
 
     num_envs = k_envs.num_envs
 
