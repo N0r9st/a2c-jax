@@ -11,9 +11,9 @@ def repeat(array, K):
     return repeated# .reshape((repeated.shape[1]*repeated.shape[0],) + repeated.shape[2:])
 
 def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, v_fn, vf_params, gamma, K, M, max_steps=1000, firstrandom=False):
-    observations = experience.observations # (num_steps, num_envs, obs_shape)
-    dones = experience.dones
-    states = experience.states
+    observations = jnp.array(experience.observations) # (num_steps, num_envs, obs_shape)
+    dones = jnp.array(experience.dones)
+    states = jnp.array(experience.states)
 
     num_envs = k_envs.num_envs
 
