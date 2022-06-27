@@ -41,6 +41,7 @@ def _worker(global_args, k_remotes, parent_remote, spaces, device, add_args) -> 
     print("WORKER STARTED")
     while True:
         try:
+            st = time.time()
             args = server.get_job()
             iteration = args.pop('iteration')
             print(f'GOT JOB FROM {iteration} ITERATION')
@@ -54,7 +55,7 @@ def _worker(global_args, k_remotes, parent_remote, spaces, device, add_args) -> 
                 mc_oar=mc_oar,
             )
             server.commit_result(result, negative=args['firstrandom'], prefix=prefix)
-            print(f'COMMITED RESULT FROM {iteration} ITERATION, NEGATIVE=', args['firstrandom'], sep="")
+            print(f'COMMITED RESULT FROM {iteration} ITERATION, TIME={time.time() - st:.1f}, NEGATIVE=', args['firstrandom'], sep="")
         except EOFError:
             break
 
