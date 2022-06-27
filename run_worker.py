@@ -41,8 +41,8 @@ def _worker(global_args, k_remotes, parent_remote, spaces, device, add_args) -> 
     print("WORKER STARTED")
     while True:
         try:
-            st = time.time()
             args = server.get_job()
+            st = time.time()
             iteration = args.pop('iteration')
             print(f'GOT JOB FROM {iteration} ITERATION')
             k_envs.obs_rms = args.pop('train_obs_rms')
