@@ -163,7 +163,12 @@ def main(args: dict):
 
     interactions_per_epoch = calculate_interactions_per_epoch(args)
     for current_update in range(start_update, total_updates):
-        time_base_collection_and_sending = 0
+        # time_base_collection_and_sending = 0
+        time_base_collection = 0
+        time_sending = 0
+        time_selecting = 0
+
+
         time_total_rollouts = 0
         time_q_updates = 0
         time_policy_updates = 0
@@ -191,9 +196,9 @@ def main(args: dict):
         sampling_masks = []
         no_sampling_masks = []
 
-        _st = time.time()
+        # _st = time.time()
         for npgk in range(args['n_packages']):
-            
+            _st = time.time()
             prngkey, _ = jax.random.split(prngkey)
             next_obs_and_dones, experience = collect_experience(
                 prngkey, 
@@ -203,7 +208,9 @@ def main(args: dict):
                 policy_fn=ready_value_and_policy_fn,)
             exp_list.append(experience)
 
+            time_base_collection += time.time() - _st
 
+            _st = time.time()
             add_args = {}
             if args['sampling_type']=='adv':
                 base_traj_part = process_experience(experience, gamma=args['gamma'], lambda_=args['lambda_'])
@@ -248,7 +255,11 @@ def main(args: dict):
                     iteration=current_update,
                     prefix=RESULT_PREFIX,
                     )
+
+            time_selecting += time.time() - _st
             # remote.send(to_worker)
+
+            _st = time.time()
             print("ADDING JOB")
             server.add_jobs(to_worker)
 
@@ -256,7 +267,9 @@ def main(args: dict):
                 to_worker['firstrandom'] = True
                 print("ADDING JOB")
                 server.add_jobs(to_worker)
-        time_base_collection_and_sending = time.time() - _st
+            time_sending += time.time() - _st
+
+        # time_base_collection_and_sending = time.time() - _st
 
         print("WAITING FOR RESULTS")
         list_results, workers_logs  = server.get_job_results(
@@ -364,7 +377,9 @@ def main(args: dict):
                 'time/updates': current_update, 
                 'time/time': epoch_time,
                 'time/num_interactions': interactions_per_epoch * current_update,
-                "time/time_base_collection_and_sending": time_base_collection_and_sending,
+                "time/time_base_collection": time_base_collection,
+                "time/time_sending": time_sending,
+                "time/time_selecting": time_selecting,
                 "time/time_total_rollouts" : time_total_rollouts,
                 "time/time_policy_updates": time_policy_updates,
                 "time/time_q_updates": time_q_updates,
@@ -387,7 +402,9 @@ def main(args: dict):
                 'time/updates': current_update, 
                 'time/time': epoch_time,
                 'time/num_interactions': interactions_per_epoch * current_update,
-                "time/time_base_collection_and_sending": time_base_collection_and_sending,
+                "time/time_base_collection": time_base_collection,
+                "time/time_sending": time_sending,
+                "time/time_selecting": time_selecting,
                 "time/time_total_rollouts" : time_total_rollouts,
                 "time/time_policy_updates": time_policy_updates,
                 "time/time_q_updates": time_q_updates,
