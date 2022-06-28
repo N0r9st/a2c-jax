@@ -31,7 +31,22 @@ POLICY_CLASSES = {
     'DiagGaussianStateDependentPolicy': DiagGaussianStateDependentPolicy,
     "DGPolicy": DGPolicy,
 }
+import traceback
+class PRF:
+    def __init__(self, msg):
+        self.msg = msg
 
+    def __enter__(self,):
+        self.st = time.time()
+        return self
+    
+    def __exit__(self, exc_type, exc_value, tb):
+        print(f"{self.msg}: {time.time() - self.st}")
+        if exc_type is not None:
+            traceback.print_exception(exc_type, exc_value, tb)
+            # return False # uncomment to pass exception through
+
+        return True
 
 def _policy_fn(prngkey, observation, params, apply_fn, determenistic=False):
     means, log_stds = apply_fn({'params': params}, observation)
@@ -283,34 +298,38 @@ def main(args: dict):
         time_total_rollouts = time.time() - _st
         
         _st = time.time()
-        original_experience = stack_experiences(exp_list)
-        
-        mc_oar = jax.tree_util.tree_map(
-            lambda *dicts: jnp.concatenate(dicts, axis=0),*[x['mc_oar'] for x in list_results],)
-        
-        if args['negative_sampling']:
-            list_negative_results, _  = server.get_job_results(
-                current_update, 
-                args['n_packages'],
-                negative=True,
-                prefix=RESULT_PREFIX,
-                )
-            negative_oar = jax.tree_util.tree_map(
-            lambda *dicts: jnp.concatenate(dicts, axis=0),*[x['mc_oar'] for x in list_negative_results],)
 
-        else: negative_oar = None
+        with PRF("STACKING EXPS"):
+            original_experience = stack_experiences(exp_list)
+
+        with PRF("TREE MAP CONCAT"):
+            mc_oar = jax.tree_util.tree_map(
+            lambda *dicts: jnp.concatenate(dicts, axis=0),*[x['mc_oar'] for x in list_results],)
+        with PRF("NEGATIVE SMPL"):
+            if args['negative_sampling']:
+                list_negative_results, _  = server.get_job_results(
+                    current_update, 
+                    args['n_packages'],
+                    negative=True,
+                    prefix=RESULT_PREFIX,
+                    )
+                negative_oar = jax.tree_util.tree_map(
+                lambda *dicts: jnp.concatenate(dicts, axis=0),*[x['mc_oar'] for x in list_negative_results],)
+
+            else: negative_oar = None
         
         print("GOT SOME STUFF FROM WORKERS")
 
+        with PRF("PROC BASE"):
+            base_oar = process_base_rollout_output(jit_apply_fn, state.params, original_experience, args['train_constants'])
         
-        base_oar = process_base_rollout_output(jit_apply_fn, state.params, original_experience, args['train_constants'])
-        
-        oar = dict(
-            observations=jnp.concatenate((base_oar['observations'], mc_oar['observations']), axis=0),
-            actions=jnp.concatenate((base_oar['actions'], mc_oar['actions']), axis=0),
-            returns=jnp.concatenate((base_oar['returns'], mc_oar['returns']), axis=0),
-            )
-        not_sampled_observations = jnp.concatenate(not_selected_observations_list, axis=0)
+        with PRF("CONCATING OARS"):
+            oar = dict(
+                observations=jnp.concatenate((base_oar['observations'], mc_oar['observations']), axis=0),
+                actions=jnp.concatenate((base_oar['actions'], mc_oar['actions']), axis=0),
+                returns=jnp.concatenate((base_oar['returns'], mc_oar['returns']), axis=0),
+                )
+            not_sampled_observations = jnp.concatenate(not_selected_observations_list, axis=0)
 
         time_processing_exp = time.time() - _st
 
