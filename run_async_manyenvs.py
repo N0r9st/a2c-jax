@@ -400,8 +400,8 @@ def main(args: dict):
             )
         if args['save'] and (current_update % args['save_every']):
             additional = {}
-            additional['obs_rms'] = deepcopy(envs.obs_rms)
-            additional['ret_rms'] = deepcopy(envs.ret_rms)
+            additional['obs_rms'] = deepcopy(train_obs_rms)
+            additional['ret_rms'] = deepcopy(train_ret_rms)
             additional['wandb_run_id'] = wandb_run_id
             save_state(args['save'], state, additional)
 
