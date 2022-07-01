@@ -43,79 +43,99 @@ def _value_and_policy_fn(prngkey, observation, params, vf_params, apply_fn, v_fn
 
 def collect_experience_withstate(
     prngkey,
-    next_obs_and_dones,
+    next_obs_and_dones_list: list,
     envs, 
     num_steps, 
     policy_fn, 
     ret_rms,
     obs_rms,
-    initial_state=None,
+    initial_state_list: list,
     ):
 
+    
     envs.training = True
     envs.ret_rms = ret_rms
     envs.obs_rms = obs_rms
-    if initial_state is not None:
-        envs.set_state(initial_state)
-    next_observations, dones = next_obs_and_dones
 
-    observations_list = []
-    actions_list = []
-    rewards_list = []
-    values_list = []
-    dones_list = [dones]
-    states_list = [envs.get_state()]
-    next_observations_list = []
+    experience_list_out = []
 
-    for _ in range(num_steps):
-        observations = next_observations
+    next_obs_and_dones_list_out = []
+    initial_state_list_out = []
+    for next_obs_and_dones, initial_state in zip(next_obs_and_dones_list, initial_state_list):
+        if initial_state is not None:
+            envs.set_state(initial_state)
+        next_observations, dones = next_obs_and_dones
+
+        observations_list = []
+        actions_list = []
+        rewards_list = []
+        values_list = []
+        dones_list = [dones]
+        states_list = [envs.get_state()]
+        next_observations_list = []
+
+
+        
+        for _ in range(num_steps):
+            observations = next_observations
+            _, prngkey = jax.random.split(prngkey)
+            values, actions = policy_fn(prngkey, observations) 
+            actions = np.array(actions)
+            next_observations, rewards, dones, info = envs.step(actions)
+            observations_list.append(observations)
+            actions_list.append(np.array(actions))
+            rewards_list.append(rewards)
+            values_list.append(values)
+            dones_list.append(dones)
+            states_list.append(envs.get_state())
+            next_observations_list.append(next_observations)
+            
+            
+
         _, prngkey = jax.random.split(prngkey)
-        values, actions = policy_fn(prngkey, observations) 
-        actions = np.array(actions)
-        next_observations, rewards, dones, info = envs.step(actions)
-        observations_list.append(observations)
-        actions_list.append(np.array(actions))
-        rewards_list.append(rewards)
+        values, actions = policy_fn(prngkey, next_observations) 
         values_list.append(values)
-        dones_list.append(dones)
-        states_list.append(envs.get_state())
-        next_observations_list.append(next_observations)
-        
-        
 
-    _, prngkey = jax.random.split(prngkey)
-    values, actions = policy_fn(prngkey, next_observations) 
-    values_list.append(values)
-
-    experience = Experience(
-        observations=np.stack(observations_list),
-        actions=np.stack(actions_list),
-        rewards=np.stack(rewards_list),
-        values=np.stack(values_list),
-        dones=np.stack(dones_list),
-        states=states_list,
-        next_observations=np.stack(next_observations_list)
-    )
+        experience = Experience(
+            observations=np.stack(observations_list),
+            actions=np.stack(actions_list),
+            rewards=np.stack(rewards_list),
+            values=np.stack(values_list),
+            dones=np.stack(dones_list),
+            states=states_list,
+            next_observations=np.stack(next_observations_list)
+        )
+        experience_list_out.append(experience)
+        next_obs_and_dones_list_out.append((next_observations, dones))
+        initial_state_list_out.append(states_list[-1])
     starter_info = dict(
-            initial_state=states_list[-1],
-            next_obs_and_dones=(next_observations, dones),
+            initial_state_list=initial_state_list_out,
+            next_obs_and_dones_list=next_obs_and_dones_list_out,
             prngkey=prngkey,
             obs_rms=envs.obs_rms,
             ret_rms=envs.ret_rms
         )
-    return starter_info, experience
+    return starter_info, experience_list_out
 
-def get_startstates_noad_key(k_envs, num_workers, prngkey: jax.random.PRNGKey):
+def get_startstates_noad_key(k_envs, num_workers, prngkey: jax.random.PRNGKey, total_parallel):
     out = []
     keys = jax.random.split(prngkey, num=num_workers)
+    repeats_per_worker = total_parallel // (k_envs.num_envs * num_workers)
     for i in range(num_workers):
-        next_obs = k_envs.reset()
-        next_obs_and_dones = (next_obs, np.array(next_obs.shape[0]*[False]))
-        states = k_envs.get_state()
+        states_list = []
+        next_obs_and_dones_list = []
+        
+        for j in range(repeats_per_worker):
+            next_obs = k_envs.reset()
+            next_obs_and_dones = (next_obs, np.array(next_obs.shape[0]*[False]))
+            states = k_envs.get_state()
+
+            next_obs_and_dones_list.append(next_obs_and_dones)
+            states_list.append(states)
         out.append(
             dict(
-                initial_state=states,
-                next_obs_and_dones=next_obs_and_dones,
+                initial_state_list=states_list,
+                next_obs_and_dones_list=next_obs_and_dones_list,
                 prngkey=keys[i],
                 obs_rms=k_envs.obs_rms,
                 ret_rms=k_envs.ret_rms
@@ -144,13 +164,15 @@ def _worker(remote, k_remotes, parent_remote, spaces, device, add_args) -> None:
                 jit_value_and_policy_fn, 
                 params=args['policy_params'],
                 vf_params=args['vf_params'])
+
             out = collect_experience_withstate_(policy_fn=policy_fn, **args['args'])
+
             remote.send(out)
         except EOFError:
             break
 
 def main(args: dict):
-    if args['type'] != 'standart' or args['num_envs']!=args['num_k_envs']:
+    if args['type'] != 'standart':
         raise NotImplementedError
 
     args['async'] = True
@@ -168,7 +190,7 @@ def main(args: dict):
 
     envs = make_vec_env(
         name=args['env_name'], 
-        num=args['num_envs'], 
+        num=args['num_k_envs'], 
         norm_r=args['norm_r'], 
         norm_obs=args['norm_obs'],
         ctx=ctx)
@@ -270,14 +292,10 @@ def main(args: dict):
     jit_q_fn = jax.jit(state.q_fn)
 
     interactions_per_epoch = calculate_interactions_per_epoch(args)
-    states_and_noad = get_startstates_noad_key(envs, args['num_workers'], prngkey)
+    states_and_noad = get_startstates_noad_key(envs, args['num_workers'], prngkey, total_parallel=args['num_envs'])
 
     for current_update in range(start_update, total_updates):
         st = time.time()
-        ready_value_and_policy_fn = functools.partial(
-            jit_value_and_policy_fn, 
-            params=state.params['policy_params'],
-            vf_params=state.params['vf_params'])
 
         if current_update%args['eval_every']==0:
             eval_envs.obs_rms = deepcopy(envs.obs_rms)
@@ -292,20 +310,20 @@ def main(args: dict):
         sampling_masks = []
         no_sampling_masks = []
         
-        for starter_info, remote in zip(states_and_noad, remotes):
-            starter_info.update(obs_rms=train_obs_rms, ret_rms=train_ret_rms,)
-            starter_info.update(num_steps=args['num_steps'],)
+        for starter_info_lists, remote in zip(states_and_noad, remotes):
+            starter_info_lists.update(obs_rms=train_obs_rms, ret_rms=train_ret_rms,)
+            starter_info_lists.update(num_steps=args['num_steps'],)
             to_worker = dict(
                 policy_params=state.params['policy_params'],
                 vf_params=state.params['vf_params'],
-                args=starter_info,
+                args=starter_info_lists,
                 )
             remote.send(to_worker)
 
         for remote in remotes:
-            starter_info, exp = remote.recv()
-
-            exp_list.append(exp)
+            # out = remote.recv()
+            starter_info, exp_w_list = remote.recv()
+            exp_list += exp_w_list
             states_and_noad.append(starter_info)
 
         train_obs_rms = states_and_noad[0]['obs_rms']
@@ -315,7 +333,6 @@ def main(args: dict):
 
 
         base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
-
         if args['type'] != 'standart':
             # mc_oar = process_mc_rollout_output(state.apply_fn, state.params, mc_experience, args['train_constants'])
             oar = dict(
