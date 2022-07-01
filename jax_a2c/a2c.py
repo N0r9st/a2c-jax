@@ -51,19 +51,19 @@ def p_loss_fn(
     #----------------------------------------
     #               Q - UPDATE
     #----------------------------------------
-
-    if constant_params['return_in_remaining']:
-        q_observations = data_dict['not_sampled_observations']
-        q_action_samples, q_logprobs, q_values = sample_acts_for_obs(
-            params['policy_params'], params['vf_params'], apply_fn, v_fn,
-            prngkey, q_observations, constant_params['K'], constant_params['logstd_stopgrad'])
-        q_observations = jnp.concatenate([q_observations]*constant_params['K'], axis=0)
-    else:
-        q_observations = data_dict['base_oar']['observations']
-        q_action_samples, q_logprobs, q_values = sample_acts_for_obs(
-            params['policy_params'], params['vf_params'], apply_fn, v_fn,
-            prngkey, q_observations, constant_params['K'], constant_params['logstd_stopgrad'])
-        q_observations = jnp.concatenate([q_observations]*constant_params['K'], axis=0)
+    if constant_params['q_updates'] is not None:
+        if constant_params['return_in_remaining']:
+            q_observations = data_dict['not_sampled_observations']
+            q_action_samples, q_logprobs, q_values = sample_acts_for_obs(
+                params['policy_params'], params['vf_params'], apply_fn, v_fn,
+                prngkey, q_observations, constant_params['K'], constant_params['logstd_stopgrad'])
+            q_observations = jnp.concatenate([q_observations]*constant_params['K'], axis=0)
+        else:
+            q_observations = data_dict['base_oar']['observations']
+            q_action_samples, q_logprobs, q_values = sample_acts_for_obs(
+                params['policy_params'], params['vf_params'], apply_fn, v_fn,
+                prngkey, q_observations, constant_params['K'], constant_params['logstd_stopgrad'])
+            q_observations = jnp.concatenate([q_observations]*constant_params['K'], axis=0)
 
     qp_loss = jnp.array(0)
     if constant_params['q_updates'] == 'rep':

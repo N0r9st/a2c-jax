@@ -1,5 +1,5 @@
 import functools
-from jax_a2c.utils import process_rewards, process_single_mc_rollout_output
+from jax_a2c.utils import process_rewards, process_single_mc_rollout_output, np_process_single_mc_rollout_output_fulldata
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -10,7 +10,7 @@ def repeat(array, K):
     repeated = jnp.concatenate([array for _ in range(K)], axis=0) 
     return repeated# .reshape((repeated.shape[1]*repeated.shape[0],) + repeated.shape[2:])
 
-def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, v_fn, vf_params, gamma, K, M, max_steps=1000, firstrandom=False):
+def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, v_fn, vf_params, gamma, K, M, max_steps=1000, firstrandom=False, process_full=False, **kwargs):
     observations = jnp.array(experience.observations) # (num_steps, num_envs, obs_shape)
     dones = jnp.array(experience.dones)
     states = experience.states
@@ -81,6 +81,12 @@ def km_mc_rollouts(prngkey, k_envs, experience, policy_fn, v_fn, vf_params, gamm
         bootstrapped=all_boot_list, # (1, in_states)
         )
     constant_params = dict(alpha=0, gamma=gamma, entropy=None, M=M)
-    rollout_oar = process_single_mc_rollout_output(
-                    rollout_data, freeze(constant_params))
+
+    if not process_full:
+        rollout_oar = process_single_mc_rollout_output(
+                        rollout_data, freeze(constant_params))
+    else:
+        rollout_oar = np_process_single_mc_rollout_output_fulldata(
+                        rollout_data, (constant_params))
     return rollout_oar
+    

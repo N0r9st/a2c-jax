@@ -102,7 +102,7 @@ def parse_args():
     parser.add_argument('--redis-port', type=int, default=6951)
     parser.add_argument('--n-packages', type=int, default=8)
     parser.add_argument('--verbose', action='store_true', default=False)
-
+    parser.add_argument('--process-full', action='store_true', default=False)
 
     args = parser.parse_args()
     return args
@@ -266,6 +266,7 @@ def update(args, cmd_args):
     args['redis_port'] = cmd_args.redis_port
     args['n_packages'] = cmd_args.n_packages
     args['verbose'] = cmd_args.verbose
+    args['process_full'] = cmd_args.process_full
     return args
 
 args = update(args, cmd_args)

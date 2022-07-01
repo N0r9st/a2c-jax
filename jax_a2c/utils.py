@@ -164,6 +164,29 @@ def process_experience(
         lambda x: np.reshape(x, (trajectory_len,) + x.shape[2:]), trajectories))
     return trajectories
 
+@functools.partial(jax.jit, static_argnums=(1,2))
+def process_oarew_to_oaret(
+    rollout_data: dict, 
+    gamma: float = .99, 
+    lambda_: float = 1.,
+    ):
+    observations = rollout_data["observations"]
+    actions = rollout_data["actions"]
+    rewards = rollout_data["rewards"]
+    values = rollout_data["values"]
+    dones = rollout_data["dones"]
+
+    dones = jnp.logical_not(dones).astype(float)
+    advantages = gae_advantages(rewards, dones, values, gamma, lambda_)
+    returns = advantages + values[:-1]
+    trajectories = (observations, actions, returns, advantages)
+    num_agents, actor_steps = observations.shape[:2]
+    trajectory_len = num_agents * actor_steps
+    trajectories = tuple(map(
+        lambda x: np.reshape(x, (trajectory_len,) + x.shape[2:]), trajectories))
+    return trajectories
+
+
 @functools.partial(jax.jit, static_argnums=(1,3,4,5,6))
 def process_experience_with_entropy(
     experience: Tuple[Array, ...], 
@@ -251,6 +274,28 @@ def process_rewards_with_entropy(
     k_returns = (rewards * masks[:-1]).sum(axis=0) + bootstrapped_values * masks[-1]
     return k_returns
 
+@functools.partial(jax.jit, static_argnames="gamma")
+def process_rewards_to_returns(
+    dones, 
+    rewards, 
+    bootstrapped_values, 
+    gamma, 
+    ):
+    """ Should be used inside loss_fn
+    """
+
+    masks = jnp.cumprod((1-dones)*gamma, axis=0)/gamma
+    add_to_last = bootstrapped_values * masks[-1]
+    rewards = rewards.at[:,-1].add(add_to_last)
+    returns = reverse_cumsum(rewards)
+    # k_returns = (rewards * masks[:-1]).sum(axis=0) + bootstrapped_values * masks[-1]
+    # returns = 
+    return returns
+
+@functools.partial(jax.jit, static_argnames=("axis",))
+def reverse_cumsum(x, axis=1):
+    return jnp.flip(jnp.cumsum(jnp.flip(x, axis=axis), axis=axis), axis=axis)
+
 vmap_process_rewards_with_entropy = jax.vmap(
     process_rewards_with_entropy, in_axes=(None, None, 0, 0, 0, 0, 0, None, None, None), out_axes=0,
     )
@@ -276,7 +321,6 @@ def concat_trajectories(traj_list):
 
 @functools.partial(jax.jit, static_argnames=("use_states",))
 def stack_experiences(exp_list, use_states=False):
-    [print(x.shape for x in exp_list)]
     num_steps = exp_list[0].observations.shape[0]
     last_vals = exp_list[-1][3][-1]
     last_dones = exp_list[-1][4][-1]
@@ -305,29 +349,6 @@ def stack_experiences(exp_list, use_states=False):
         states=states,
         next_observations=next_observations
     )
-
-
-# @jax.jit
-# def flatten_experience(experience: Experience): 
-#     num_steps, num_envs = experience.observations.shape[:2]
-#     return Experience(
-#         observations = experience.observations[:num_steps].reshape((num_envs*num_steps,) + experience.observations.shape[2:]),
-#         actions = experience.actions[:num_steps].reshape((num_envs*num_steps,) + experience.actions.shape[2:]),
-#         rewards = experience.rewards[:num_steps].reshape((num_envs*num_steps,) + experience.rewards.shape[2:]),
-#         values = experience.values[:num_steps].reshape((num_envs*num_steps,) + experience.values.shape[2:]),
-#         dones = experience.dones[:num_steps].reshape((num_envs*num_steps,) + experience.dones.shape[2:]),
-#         states = flatten_list(experience.states[:num_steps]),
-#         next_observations=experience.next_observations.reshape((num_envs*num_steps,) + experience.next_observations.shape[2:])
-#             )
-
-# def select_random_states(prngkey, n, experience, type, **kwargs):
-#     flattened = flatten_experience(experience)
-#     if type=='uniform':
-#         p = None
-#     if type=='adv':
-#         advs = kwargs['advantages'].reshape(-1)
-#         p = jax.nn.softmax((advs**2)/kwargs['sampling_prob_temp'], axis=0)
-#     return select_experience_random(prngkey, n, flattened, p=p)
 
 def flatten_experience(experience: Experience): 
     num_steps, num_envs = experience.observations.shape[:2]
@@ -498,6 +519,29 @@ def process_single_mc_rollout_output(mc_rollouts_exp, constant_params):
         returns=mc_returns,
     )
 
+# @functools.partial(jax.jit, static_argnames=('constant_params','apply_fn'))
+def np_process_single_mc_rollout_output_fulldata(mc_rollouts_exp, constant_params):
+    mc_rollouts_full_returns = np_compute_all_mc_returns(
+        rewards=mc_rollouts_exp['rewards'],
+        dones=mc_rollouts_exp['dones'],
+        bootstrapped=mc_rollouts_exp['bootstrapped'],
+        gamma=constant_params['gamma'],
+    )
+
+    return dict(
+        observations=mc_rollouts_exp['observations'].reshape((-1, mc_rollouts_exp['observations'].shape[-1])),
+        actions=mc_rollouts_exp['actions'].reshape((-1, mc_rollouts_exp['actions'].shape[-1])),
+        returns=mc_rollouts_full_returns.reshape(-1),
+    )
+
+def np_compute_all_mc_returns(rewards, dones, bootstrapped, gamma):
+    masks = 1 - dones
+    returns = np.zeros_like(rewards, dtype=np.float32)
+    returns[-1] = (rewards[-1] + gamma * bootstrapped * masks[-1])
+    for i in range(rewards.shape[0]-2, -1, -1):
+        returns[i] = rewards[i] + gamma * returns[i+1] * masks[i+1]
+    return returns
+    
 @functools.partial(jax.jit, static_argnames=('constant_params','apply_fn'))
 def process_base_rollout_output(apply_fn, params, orig_exp, constant_params):
     (observations, 
@@ -518,7 +562,7 @@ def process_base_rollout_output(apply_fn, params, orig_exp, constant_params):
     )
 
 def calculate_interactions_per_epoch(args):
-    num_interactions = args['num_envs'] * args['num_envs']
+    num_interactions = args['num_steps'] * args['num_envs']
     if args['type'] == 'standart':
         return num_interactions
     else:

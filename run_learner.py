@@ -271,6 +271,7 @@ def main(args: dict):
                     firstrandom=False,
                     iteration=current_update,
                     prefix=RESULT_PREFIX,
+                    process_full=args['process_full'],
                     )
 
             time_selecting += time.time() - _st
