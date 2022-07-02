@@ -190,14 +190,14 @@ def main(args: dict):
 
     envs = make_vec_env(
         name=args['env_name'], 
-        num=args['num_k_envs'], 
+        num=16,# args['num_k_envs'], 
         norm_r=args['norm_r'], 
         norm_obs=args['norm_obs'],
         ctx=ctx)
         
     k_envs_fn = functools.partial(make_vec_env,
         name=args['env_name'], 
-        num=args['num_k_envs'], 
+        num=16, # args['num_k_envs'], 
         norm_r=args['norm_r'], 
         norm_obs=args['norm_obs'],
         ctx=ctx
@@ -205,7 +205,7 @@ def main(args: dict):
 
     eval_envs = make_vec_env(
             name=args['env_name'], 
-            num=args['num_envs'], 
+            num=args['num_k_envs'], 
             norm_r=False, 
             norm_obs=args['norm_obs'],
             ctx=ctx)
@@ -298,7 +298,7 @@ def main(args: dict):
         st = time.time()
 
         if current_update%args['eval_every']==0:
-            eval_envs.obs_rms = deepcopy(envs.obs_rms)
+            eval_envs.obs_rms = deepcopy(train_obs_rms)
             _, eval_return = eval(state.apply_fn, state.params['policy_params'], eval_envs)
             print(f'Updates {current_update}/{total_updates}. Eval return: {eval_return}. Epoch_time: {epoch_time}.')
         #------------------------------------------------
