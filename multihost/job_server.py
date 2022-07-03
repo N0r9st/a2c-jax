@@ -114,6 +114,7 @@ class KLMJobServer:
                 
             if result['iteration']==current_iteration: 
                 results.append(result)
+                print(f"GOT RESULT FROM {current_iteration} ITERATION")
             else:
                 incorrect_iteration += 1
                 

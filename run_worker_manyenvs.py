@@ -133,7 +133,7 @@ def _worker(remote, k_remotes, parent_remote, spaces, device, add_args) -> None:
                 iteration=iteration,
                 experiences=experiences,
             )
-            server.commit_result(result, prefix=args['prefix'])
+            server.commit_result(result, prefix=args['prefix'], negative=False)
             print(f'COMMITED RESULT FROM {iteration} ITERATION, TIME={time.time() - st:.1f}', sep="")            
         except EOFError:
             break

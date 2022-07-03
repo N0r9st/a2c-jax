@@ -164,7 +164,7 @@ def main(args: dict):
             wandb_run_id = wandb.run.id
         else:
             wandb.init(project=args['wandb_proj_name'], config=args, id=wandb_run_id, resume="allow")
-            
+
     # -----------------------------------------
     #            CONNECTING TO REDIS
     #-----------------------------------------
@@ -176,7 +176,7 @@ def main(args: dict):
         base_prefix="manyenvs_")
     print(RESULT_PREFIX)
     server.reset_queue(prefix=RESULT_PREFIX)
-    server.reset_queue()
+    # server.reset_queue()
     
     # ------------------------------------------
 
@@ -184,8 +184,6 @@ def main(args: dict):
 
 
     args['train_constants'] = freeze(args['train_constants'])
-
-    jit_q_fn = jax.jit(state.q_fn)
 
     interactions_per_epoch = calculate_interactions_per_epoch(args)
     states_and_noad = get_startstates_noad_key(envs, args['n_packages'], prngkey, total_parallel=args['num_envs'])
@@ -220,7 +218,7 @@ def main(args: dict):
             
             
             server.add_jobs(to_worker)
-            print(current_update, 'added')
+            print(current_update, '- ADDED JOB')
 
         print("RECEIVING RESULTS")
         list_dict_results, workers_logs  = server.get_job_results(
