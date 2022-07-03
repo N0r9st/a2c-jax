@@ -52,7 +52,6 @@ def collect_experience_withstate(
     initial_state_list: list,
     ):
 
-    
     envs.training = True
     envs.ret_rms = ret_rms
     envs.obs_rms = obs_rms
@@ -62,8 +61,7 @@ def collect_experience_withstate(
     next_obs_and_dones_list_out = []
     initial_state_list_out = []
     for next_obs_and_dones, initial_state in zip(next_obs_and_dones_list, initial_state_list):
-        if initial_state is not None:
-            envs.set_state(initial_state)
+        envs.set_state(initial_state)
         next_observations, dones = next_obs_and_dones
 
         observations_list = []
@@ -166,7 +164,8 @@ def _worker(remote, k_remotes, parent_remote, spaces, device, add_args) -> None:
                 vf_params=args['vf_params'])
 
             out = collect_experience_withstate_(policy_fn=policy_fn, **args['args'])
-
+            
+            
             remote.send(out)
         except EOFError:
             break
@@ -244,8 +243,6 @@ def main(args: dict):
         v_fn=state.v_fn,
         determenistic=False)
 
-    jit_value_and_policy_fn = jax.jit(_apply_value_and_policy_fn)
-
     # -----------------------------------------
     #            STARTING WORKERS
     #-----------------------------------------
@@ -319,13 +316,12 @@ def main(args: dict):
                 args=starter_info_lists,
                 )
             remote.send(to_worker)
-
+        states_and_noad = []
         for remote in remotes:
             # out = remote.recv()
             starter_info, exp_w_list = remote.recv()
             exp_list += exp_w_list
             states_and_noad.append(starter_info)
-
         train_obs_rms = states_and_noad[0]['obs_rms']
         train_ret_rms = states_and_noad[0]['ret_rms']
 
