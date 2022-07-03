@@ -13,6 +13,7 @@ class KLMJobServer:
                  redis_init_wait_seconds=5,
                  password=None,
                  verbose=True,
+                 base_prefix="",
                  **kwargs,
                  ):
         """
@@ -28,9 +29,9 @@ class KLMJobServer:
         :param results_key: default name for job results
         :param model_key: default name for weights pickle
         """
-        self.jobs_key, self.results_key = jobs_key, results_key
+        self.jobs_key, self.results_key = (base_prefix + jobs_key), (base_prefix + results_key)
         self.verbose = verbose
-        self.negative_results_key = negative_results_key
+        self.negative_results_key = base_prefix + negative_results_key
 
         # if localhost and can't find redis, start one
         if host in ("localhost", "0.0.0.0", "127.0.0.1", "*"):

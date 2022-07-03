@@ -24,16 +24,14 @@ from jax_a2c.km_mc_traj import km_mc_rollouts
 from jax_a2c.saving import save_state, load_state
 from flax.core import freeze
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
+from multihost.job_server import KLMJobServer
 
 POLICY_CLASSES = {
     'DiagGaussianPolicy': DiagGaussianPolicy, 
     'DiagGaussianStateDependentPolicy': DiagGaussianStateDependentPolicy,
     "DGPolicy": DGPolicy,
 }
-def _policy_fn(prngkey, observation, params, apply_fn, determenistic=False):
-    means, log_stds = apply_fn({'params': params}, observation)
-    sampled_actions  = means if determenistic else sample_action(prngkey, means, log_stds)
-    return sampled_actions
+
 
 def _value_and_policy_fn(prngkey, observation, params, vf_params, apply_fn, v_fn, determenistic=False):
     means, log_stds = apply_fn({'params': params}, observation)
@@ -41,79 +39,6 @@ def _value_and_policy_fn(prngkey, observation, params, vf_params, apply_fn, v_fn
     sampled_actions  = means if determenistic else sample_action(prngkey, means, log_stds)
     return values, sampled_actions
 
-def collect_experience_withstate(
-    prngkey,
-    next_obs_and_dones_list: list,
-    envs, 
-    num_steps, 
-    policy_fn, 
-    ret_rms,
-    obs_rms,
-    initial_state_list: list,
-    ):
-
-    envs.training = True
-    envs.ret_rms = ret_rms
-    envs.obs_rms = obs_rms
-
-    experience_list_out = []
-
-    next_obs_and_dones_list_out = []
-    initial_state_list_out = []
-    for next_obs_and_dones, initial_state in zip(next_obs_and_dones_list, initial_state_list):
-        envs.set_state(initial_state)
-        next_observations, dones = next_obs_and_dones
-
-        observations_list = []
-        actions_list = []
-        rewards_list = []
-        values_list = []
-        dones_list = [dones]
-        states_list = [envs.get_state()]
-        next_observations_list = []
-
-
-        
-        for _ in range(num_steps):
-            observations = next_observations
-            _, prngkey = jax.random.split(prngkey)
-            values, actions = policy_fn(prngkey, observations) 
-            actions = np.array(actions)
-            next_observations, rewards, dones, info = envs.step(actions)
-            observations_list.append(observations)
-            actions_list.append(np.array(actions))
-            rewards_list.append(rewards)
-            values_list.append(values)
-            dones_list.append(dones)
-            states_list.append(envs.get_state())
-            next_observations_list.append(next_observations)
-            
-            
-
-        _, prngkey = jax.random.split(prngkey)
-        values, actions = policy_fn(prngkey, next_observations) 
-        values_list.append(values)
-
-        experience = Experience(
-            observations=np.stack(observations_list),
-            actions=np.stack(actions_list),
-            rewards=np.stack(rewards_list),
-            values=np.stack(values_list),
-            dones=np.stack(dones_list),
-            states=states_list,
-            next_observations=np.stack(next_observations_list)
-        )
-        experience_list_out.append(experience)
-        next_obs_and_dones_list_out.append((next_observations, dones))
-        initial_state_list_out.append(states_list[-1])
-    starter_info = dict(
-            initial_state_list=initial_state_list_out,
-            next_obs_and_dones_list=next_obs_and_dones_list_out,
-            prngkey=prngkey,
-            obs_rms=envs.obs_rms,
-            ret_rms=envs.ret_rms
-        )
-    return starter_info, experience_list_out
 
 def get_startstates_noad_key(k_envs, num_workers, prngkey: jax.random.PRNGKey, total_parallel):
     out = []
@@ -140,35 +65,6 @@ def get_startstates_noad_key(k_envs, num_workers, prngkey: jax.random.PRNGKey, t
             )
         )
     return out
-
-
-def _worker(remote, k_remotes, parent_remote, spaces, device, add_args) -> None:
-    print('D:', device)
-    os.environ['CUDA_VISIBLE_DEVICES'] = str(device)
-    parent_remote.close()
-    k_envs = DummySubprocVecEnv(remotes=k_remotes)
-    
-    k_envs.observation_space, k_envs.action_space = spaces
-    k_envs = VecNormalize(k_envs, training=False)
-    collect_experience_withstate_ = functools.partial(collect_experience_withstate, envs=k_envs)
-
-    jit_value_and_policy_fn = jax.jit(add_args['policy_fn'], static_argnames=('determenistic',))
-
-    while True:
-        try:
-            args = remote.recv()
-            # policy_fn = functools.partial(_policy_fn, **(args.pop('policy_fn')))
-            policy_fn = functools.partial(
-                jit_value_and_policy_fn, 
-                params=args['policy_params'],
-                vf_params=args['vf_params'])
-
-            out = collect_experience_withstate_(policy_fn=policy_fn, **args['args'])
-            
-            
-            remote.send(out)
-        except EOFError:
-            break
 
 def main(args: dict):
     if args['type'] != 'standart':
@@ -204,7 +100,7 @@ def main(args: dict):
 
     eval_envs = make_vec_env(
             name=args['env_name'], 
-            num=16, # args['num_k_envs'], 
+            num=16, #args['num_k_envs'], 
             norm_r=False, 
             norm_obs=args['norm_obs'],
             ctx=ctx)
@@ -244,18 +140,19 @@ def main(args: dict):
         determenistic=False)
 
     # -----------------------------------------
-    #            STARTING WORKERS
+    #            CONNECTING TO REDIS
     #-----------------------------------------
-    if args['num_workers'] is not None:
-        add_args = {'policy_fn': _apply_value_and_policy_fn,}
-        remotes = run_workers(
-            _worker, 
-            k_envs_fn, 
-            args['num_workers'], 
-            (envs.observation_space, envs.action_space),
-            ctx,
-            split_between_devices=args['split_between_devices'],
-            add_args=add_args)
+    RESULT_PREFIX = str(args)
+
+    if args['wb_flag']:
+        RESULT_PREFIX += wandb_run_id
+    server = KLMJobServer(host=args['redis_host'], port=args['redis_port'], password='fuckingpassword',
+        base_prefix="manyenvs_")
+    print(RESULT_PREFIX)
+    server.reset_queue(prefix=RESULT_PREFIX)
+    server.reset_queue()
+    
+    # ------------------------------------------
 
     if args['load']:
         chkpnt = args['load']
@@ -289,7 +186,7 @@ def main(args: dict):
     jit_q_fn = jax.jit(state.q_fn)
 
     interactions_per_epoch = calculate_interactions_per_epoch(args)
-    states_and_noad = get_startstates_noad_key(envs, args['num_workers'], prngkey, total_parallel=args['num_envs'])
+    states_and_noad = get_startstates_noad_key(envs, args['n_packages'], prngkey, total_parallel=args['num_envs'])
 
     for current_update in range(start_update, total_updates):
         st = time.time()
@@ -302,24 +199,38 @@ def main(args: dict):
         #              WORKER ROLLOUTS
         #------------------------------------------------
     
+        exp_list = []
         not_selected_observations_list = []
         sampling_masks = []
         no_sampling_masks = []
         
-        for starter_info_lists, remote in zip(states_and_noad, remotes):
+        print("ADDING JOBS")
+        for starter_info_lists in states_and_noad:
             starter_info_lists.update(obs_rms=train_obs_rms, ret_rms=train_ret_rms,)
             starter_info_lists.update(num_steps=args['num_steps'],)
             to_worker = dict(
                 policy_params=state.params['policy_params'],
                 vf_params=state.params['vf_params'],
                 args=starter_info_lists,
+                iteration=current_update,
+                prefix=RESULT_PREFIX,
                 )
-            remote.send(to_worker)
+            
+            
+            server.add_jobs(to_worker)
+            print(current_update, 'added')
+
+        print("RECEIVING RESULTS")
+        list_dict_results, workers_logs  = server.get_job_results(
+            current_update, 
+            args['n_packages'],
+            negative=False,
+            prefix=RESULT_PREFIX,
+            )
         states_and_noad = []
         exp_list = []
-        for remote in remotes:
-            # out = remote.recv()
-            starter_info, exp_w_list = remote.recv()
+        for dict_ in list_dict_results:
+            starter_info, exp_w_list = dict_['experiences']
             exp_list += exp_w_list
             states_and_noad.append(starter_info)
         train_obs_rms = states_and_noad[0]['obs_rms']
@@ -344,42 +255,6 @@ def main(args: dict):
             not_sampled_observations = base_oar['observations'].reshape((-1, base_oar['observations'].shape[-1]))
             sampling_masks = None
             no_sampling_masks = None
-
-        
-
-        if args['train_constants']['q_updates'] is not None:
-            sampling_masks = jnp.stack(sampling_masks)
-            no_sampling_masks = jnp.stack(no_sampling_masks)
-            prngkey, _ = jax.random.split(prngkey)
-            q_train_oar, q_test_oar = general_train_test_split(
-                base_oar=base_oar,
-                mc_oar=mc_oar,
-                negative_oar=negative_oar,
-                sampling_masks=sampling_masks,
-                no_sampling_masks=no_sampling_masks,
-                prngkey=prngkey,
-                test_ratio=args['train_constants']['qf_test_ratio'],
-                k=args['K'],
-                nw=args['num_workers'],
-                num_steps=args['num_steps'],
-                num_envs=args['num_envs'],
-                use_base_traj_for_q=args['use_base_traj_for_q'],
-                split_type=args['split_type'],          
-            )
-
-            args['train_constants'] = args['train_constants'].copy({
-                'qf_update_batch_size':args['train_constants']['qf_update_batch_size'],
-                'q_train_len':len(q_train_oar['observations']),
-                })
-            state, (q_loss, q_loss_dict) = q_step(
-                state, 
-                q_train_oar, q_test_oar, # (Experience(original trajectory), List[dicts](kml trajs))
-                prngkey,
-                constant_params=args['train_constants'], jit_q_fn=jit_q_fn
-                )
-            state = state.replace(step=current_update)
-        else:
-            q_loss_dict = {}
 
         prngkey, _ = jax.random.split(prngkey)
         p_train_data_dict = {
@@ -415,10 +290,10 @@ def main(args: dict):
             epoch_times = []
 
             loss_dict = jax.tree_map(lambda x: x.item(), loss_dict)
-            q_loss_dict = jax.tree_map(lambda x: x.item(), q_loss_dict)
             loss_dict['loss'] = loss.item()
             wandb.log({'training/' + k: v for k, v in loss_dict.items()}, step=current_update)
-            wandb.log({'q-training/' + k: v for k, v in q_loss_dict.items()}, step=current_update)
+            wandb.log({'multihost/' + k: v for k, v in workers_logs.items()}, step=current_update)
+
 
 if __name__=='__main__':
 
