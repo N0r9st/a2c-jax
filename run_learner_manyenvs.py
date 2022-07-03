@@ -139,20 +139,7 @@ def main(args: dict):
         v_fn=state.v_fn,
         determenistic=False)
 
-    # -----------------------------------------
-    #            CONNECTING TO REDIS
-    #-----------------------------------------
-    RESULT_PREFIX = str(args)
-
-    if args['wb_flag']:
-        RESULT_PREFIX += wandb_run_id
-    server = KLMJobServer(host=args['redis_host'], port=args['redis_port'], password='fuckingpassword',
-        base_prefix="manyenvs_")
-    print(RESULT_PREFIX)
-    server.reset_queue(prefix=RESULT_PREFIX)
-    server.reset_queue()
     
-    # ------------------------------------------
 
     if args['load']:
         chkpnt = args['load']
@@ -177,6 +164,21 @@ def main(args: dict):
             wandb_run_id = wandb.run.id
         else:
             wandb.init(project=args['wandb_proj_name'], config=args, id=wandb_run_id, resume="allow")
+            
+    # -----------------------------------------
+    #            CONNECTING TO REDIS
+    #-----------------------------------------
+    RESULT_PREFIX = str(args)
+
+    if args['wb_flag']:
+        RESULT_PREFIX += wandb_run_id
+    server = KLMJobServer(host=args['redis_host'], port=args['redis_port'], password='fuckingpassword',
+        base_prefix="manyenvs_")
+    print(RESULT_PREFIX)
+    server.reset_queue(prefix=RESULT_PREFIX)
+    server.reset_queue()
+    
+    # ------------------------------------------
 
     total_updates = args['num_timesteps'] // ( args['num_envs'] * args['num_steps'])
 
