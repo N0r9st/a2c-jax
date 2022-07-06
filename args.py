@@ -103,6 +103,7 @@ def parse_args():
     parser.add_argument('--n-packages', type=int, default=8)
     parser.add_argument('--verbose', action='store_true', default=False)
     parser.add_argument('--process-full', action='store_true', default=False)
+    parser.add_argument('--q-function', type=str, default="QFunction")
 
     args = parser.parse_args()
     return args
@@ -267,6 +268,7 @@ def update(args, cmd_args):
     args['n_packages'] = cmd_args.n_packages
     args['verbose'] = cmd_args.verbose
     args['process_full'] = cmd_args.process_full
+    args['q_function'] = cmd_args.q_function
     return args
 
 args = update(args, cmd_args)

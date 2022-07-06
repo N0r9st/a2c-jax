@@ -23,7 +23,7 @@ from jax_a2c.saving import load_state, save_state
 from jax_a2c.utils import (Experience, calculate_interactions_per_epoch,
                            collect_experience, create_train_state,
                            process_base_rollout_output, process_experience,
-                           select_random_states, stack_experiences)
+                           select_random_states, stack_experiences, PRF)
 from multihost.job_server import KLMJobServer
 
 POLICY_CLASSES = {
@@ -31,22 +31,6 @@ POLICY_CLASSES = {
     'DiagGaussianStateDependentPolicy': DiagGaussianStateDependentPolicy,
     "DGPolicy": DGPolicy,
 }
-import traceback
-class PRF:
-    def __init__(self, msg):
-        self.msg = msg
-
-    def __enter__(self,):
-        self.st = time.time()
-        return self
-    
-    def __exit__(self, exc_type, exc_value, tb):
-        print(f"{self.msg}: {time.time() - self.st}")
-        if exc_type is not None:
-            traceback.print_exception(exc_type, exc_value, tb)
-            # return False # uncomment to pass exception through
-
-        return True
 
 def _policy_fn(prngkey, observation, params, apply_fn, determenistic=False):
     means, log_stds = apply_fn({'params': params}, observation)

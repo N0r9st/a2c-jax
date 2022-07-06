@@ -61,6 +61,45 @@ class QFunction(nn.Module):
 
         return qvalues[..., 0]
 
+class QS0Function(nn.Module):
+    """ MLP-based Q-function approximator
+    """
+    hidden_sizes: Tuple[int]
+    action_dim: int
+    @nn.compact
+    def __call__(self, obs, actions):
+        x = jnp.concatenate([obs, actions], axis=-1) # (bs, o_dim), (bs, a_dim) -> (bs, o_dim+a_dim)
+        for h_size in self.hidden_sizes:
+            x = nn.Dense(features=h_size, kernel_init=nn.initializers.orthogonal(scale=jnp.sqrt(2)))(x)
+            x = jnp.sin(x)
+        qvalues = nn.Dense(
+            features=1, 
+            kernel_init=nn.initializers.orthogonal(scale=jnp.sqrt(2)), 
+            name='Q_values')(x)
+
+        return qvalues[..., 0]
+
+class QS1Function(nn.Module):
+    """ MLP-based Q-function approximator
+    """
+    hidden_sizes: Tuple[int]
+    action_dim: int
+    omega_0: int = 30
+    @nn.compact
+    def __call__(self, obs, actions):
+        x = jnp.concatenate([obs, actions], axis=-1) # (bs, o_dim), (bs, a_dim) -> (bs, o_dim+a_dim)
+        for i, h_size in enumerate(self.hidden_sizes):
+            x = nn.Dense(
+                features=h_size, 
+                kernel_init=nn.initializers.orthogonal(scale=jnp.sqrt(6/h_size) * self.omega_0**(i==0)))(x)
+            x = jnp.sin(x)
+        qvalues = nn.Dense(
+            features=1, 
+            kernel_init=nn.initializers.orthogonal(scale=jnp.sqrt(2)), 
+            name='Q_values')(x)
+
+        return qvalues[..., 0]
+
 
 class VFunction(nn.Module):
     """ Simple MLP-based value-function

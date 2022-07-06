@@ -3,6 +3,7 @@ from typing import Any, Callable, Dict, Tuple
 from collections import namedtuple
 import functools
 import time
+import traceback
 
 import jax
 import jax.numpy as jnp
@@ -571,3 +572,17 @@ def calculate_interactions_per_epoch(args):
             num_interactions += args['n_samples'] * args['K'] * args['M'] * args['L']
 
     return num_interactions
+
+class PRF:
+    def __init__(self, msg):
+        self.msg = msg
+
+    def __enter__(self,):
+        self.st = time.time()
+        return self
+    
+    def __exit__(self, exc_type, exc_value, tb):
+        print(f"{self.msg}: {time.time() - self.st}")
+        if exc_type is not None:
+            traceback.print_exception(exc_type, exc_value, tb)
+        return True

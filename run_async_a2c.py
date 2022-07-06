@@ -1,34 +1,47 @@
 import functools
 import os
+
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
-from copy import deepcopy
+import itertools
+import multiprocessing as mp
 import time
+from copy import deepcopy
+
 import jax
 import jax.numpy as jnp
 import numpy as np
-import wandb
-import itertools
-import multiprocessing as mp
-
-from jax_a2c.a2c import p_step
-from jax_a2c.q_updates import q_step, train_test_split, test_qf, train_test_split_k_repeat, general_train_test_split
-from jax_a2c.distributions import sample_action_from_normal as sample_action
-from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
-from jax_a2c.evaluation import eval, q_eval
-from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy, VFunction, DGPolicy
-from jax_a2c.utils import (Experience, collect_experience, create_train_state, select_random_states,
-                           process_experience, concat_trajectories, process_base_rollout_output,
-                           stack_experiences, process_rollout_output,  process_mc_rollout_output,
-                           calculate_interactions_per_epoch)
-from jax_a2c.km_mc_traj import km_mc_rollouts
-from jax_a2c.saving import save_state, load_state
 from flax.core import freeze
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
+
+import wandb
+from jax_a2c.a2c import p_step
+from jax_a2c.distributions import sample_action_from_normal as sample_action
+from jax_a2c.env_utils import DummySubprocVecEnv, make_vec_env, run_workers
+from jax_a2c.evaluation import eval, q_eval
+from jax_a2c.km_mc_traj import km_mc_rollouts
+from jax_a2c.policy import (DGPolicy, DiagGaussianPolicy,
+                            DiagGaussianStateDependentPolicy, QFunction,
+                            QS0Function, QS1Function, VFunction)
+from jax_a2c.q_updates import (general_train_test_split, q_step, test_qf,
+                               train_test_split, train_test_split_k_repeat)
+from jax_a2c.saving import load_state, save_state
+from jax_a2c.utils import (Experience, calculate_interactions_per_epoch,
+                           collect_experience, concat_trajectories,
+                           create_train_state, process_base_rollout_output,
+                           process_experience, process_mc_rollout_output,
+                           process_rollout_output, select_random_states,
+                           stack_experiences)
 
 POLICY_CLASSES = {
     'DiagGaussianPolicy': DiagGaussianPolicy, 
     'DiagGaussianStateDependentPolicy': DiagGaussianStateDependentPolicy,
     "DGPolicy": DGPolicy,
+}
+
+QF_CLASSES = {
+    'QFunction': QFunction, 
+    'QS0Function': QS0Function,
+    "QS1Function": QS1Function,
 }
 def _policy_fn(prngkey, observation, params, apply_fn, determenistic=False):
     means, log_stds = apply_fn({'params': params}, observation)
@@ -111,7 +124,7 @@ def main(args: dict):
         action_dim=envs.action_space.shape[0],
         init_log_std=args['init_log_std'])
 
-    qf_model = QFunction(hidden_sizes=args['q_hidden_sizes'], action_dim=envs.action_space.shape[0],)
+    qf_model = QF_CLASSES[args['q_function']](hidden_sizes=args['q_hidden_sizes'], action_dim=envs.action_space.shape[0],)
     vf_model = VFunction(hidden_sizes=args['q_hidden_sizes'])
 
     prngkey = jax.random.PRNGKey(args['seed'])
