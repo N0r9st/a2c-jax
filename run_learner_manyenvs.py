@@ -19,7 +19,7 @@ from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDepen
 from jax_a2c.utils import (Experience, collect_experience, create_train_state, select_random_states,
                            process_experience, concat_trajectories, process_base_rollout_output,
                            stack_experiences, process_rollout_output,  process_mc_rollout_output,
-                           calculate_interactions_per_epoch)
+                           calculate_interactions_per_epoch, PRF)
 from jax_a2c.km_mc_traj import km_mc_rollouts
 from jax_a2c.saving import save_state, load_state
 from flax.core import freeze
@@ -204,42 +204,42 @@ def main(args: dict):
         sampling_masks = []
         no_sampling_masks = []
         
-        print("ADDING JOBS")
-        for starter_info_lists in states_and_noad:
-            starter_info_lists.update(obs_rms=train_obs_rms, ret_rms=train_ret_rms,)
-            starter_info_lists.update(num_steps=args['num_steps'],)
-            to_worker = dict(
-                policy_params=state.params['policy_params'],
-                vf_params=state.params['vf_params'],
-                args=starter_info_lists,
-                iteration=current_update,
+        with PRF("SENDING JOBS"):
+            for starter_info_lists in states_and_noad:
+                starter_info_lists.update(obs_rms=train_obs_rms, ret_rms=train_ret_rms,)
+                starter_info_lists.update(num_steps=args['num_steps'],)
+                to_worker = dict(
+                    policy_params=state.params['policy_params'],
+                    vf_params=state.params['vf_params'],
+                    args=starter_info_lists,
+                    iteration=current_update,
+                    prefix=RESULT_PREFIX,
+                    )
+                server.add_jobs(to_worker)
+                print(current_update, '- ADDED JOB')
+
+        with PRF("WAITING RESULTS"):
+            list_dict_results, workers_logs  = server.get_job_results(
+                current_update, 
+                args['n_packages'],
+                negative=False,
                 prefix=RESULT_PREFIX,
                 )
-            
-            
-            server.add_jobs(to_worker)
-            print(current_update, '- ADDED JOB')
 
-        print("RECEIVING RESULTS")
-        list_dict_results, workers_logs  = server.get_job_results(
-            current_update, 
-            args['n_packages'],
-            negative=False,
-            prefix=RESULT_PREFIX,
-            )
-        states_and_noad = []
-        exp_list = []
-        for dict_ in list_dict_results:
-            starter_info, exp_w_list = dict_['experiences']
-            exp_list += exp_w_list
-            states_and_noad.append(starter_info)
-        train_obs_rms = states_and_noad[0]['obs_rms']
-        train_ret_rms = states_and_noad[0]['ret_rms']
+        with PRF("PREPROCESSING RESULTS"):
+            states_and_noad = []
+            exp_list = []
+            for dict_ in list_dict_results:
+                starter_info, exp_w_list = dict_['experiences']
+                exp_list += exp_w_list
+                states_and_noad.append(starter_info)
+            train_obs_rms = states_and_noad[0]['obs_rms']
+            train_ret_rms = states_and_noad[0]['ret_rms']
 
-        original_experience = stack_experiences(exp_list)
+            original_experience = stack_experiences(exp_list)
 
 
-        base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
+            base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
         if args['type'] != 'standart':
             # mc_oar = process_mc_rollout_output(state.apply_fn, state.params, mc_experience, args['train_constants'])
             oar = dict(
@@ -263,12 +263,13 @@ def main(args: dict):
             'mc_oar': mc_oar,
             'not_sampled_observations': not_sampled_observations,
             }
-        state, (loss, loss_dict) = p_step(
-            state, 
-            p_train_data_dict,
-            prngkey,
-            constant_params=args['train_constants'],
-            )
+        with PRF("POLICY STEP"):
+            state, (loss, loss_dict) = p_step(
+                state, 
+                p_train_data_dict,
+                prngkey,
+                constant_params=args['train_constants'],
+                )
         if args['save'] and (current_update % args['save_every']):
             additional = {}
             additional['obs_rms'] = deepcopy(train_obs_rms)
