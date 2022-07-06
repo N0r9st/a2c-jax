@@ -305,12 +305,15 @@ def main(args: dict):
                         policy_fn=dict(
                             params=state.params['policy_params'], 
                             determenistic=args['km_determenistic']),
+                        # v_fn=dict(params=state.params["vf_params"]),
+                        vf_params=state.params["vf_params"],
                         max_steps=args['L'],
                         K=args['K'],
                         M=args['M'],
                         train_obs_rms=train_obs_rms,
                         train_ret_rms=train_ret_rms,
                         firstrandom=True,
+                        process_full=args['process_full'],
                         )
                     remote.send(to_worker)
                 # negative_exp = jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
