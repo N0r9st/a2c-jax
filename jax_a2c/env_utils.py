@@ -251,7 +251,7 @@ class DelayedRewardWrapper(gym.RewardWrapper):
             delayed_reward = 0
         else:
             delayed_reward = self.reward_buffer.popleft()
-            self.reward_buffer.append(reward)
+        self.reward_buffer.append(reward)
         return delayed_reward
 
     def reset(self):
