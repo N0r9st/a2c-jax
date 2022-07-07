@@ -104,6 +104,7 @@ def parse_args():
     parser.add_argument('--verbose', action='store_true', default=False)
     parser.add_argument('--process-full', action='store_true', default=False)
     parser.add_argument('--q-function', type=str, default="QFunction")
+    parser.add_argument('--delay', type=int, default=0)
 
     args = parser.parse_args()
     return args
@@ -269,6 +270,10 @@ def update(args, cmd_args):
     args['verbose'] = cmd_args.verbose
     args['process_full'] = cmd_args.process_full
     args['q_function'] = cmd_args.q_function
+
+    args['wrappers'] = dict(
+        delay=cmd_args.delay
+    )
     return args
 
 args = update(args, cmd_args)

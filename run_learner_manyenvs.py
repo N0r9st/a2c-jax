@@ -88,22 +88,16 @@ def main(args: dict):
         num=args['num_k_envs'], 
         norm_r=args['norm_r'], 
         norm_obs=args['norm_obs'],
-        ctx=ctx)
-        
-    k_envs_fn = functools.partial(make_vec_env,
-        name=args['env_name'], 
-        num=args['num_k_envs'], 
-        norm_r=args['norm_r'], 
-        norm_obs=args['norm_obs'],
-        ctx=ctx
-        )
+        ctx=ctx,
+        wrapper_params=args['wrappers'],)
 
     eval_envs = make_vec_env(
             name=args['env_name'], 
             num=16, #args['num_k_envs'], 
             norm_r=False, 
             norm_obs=args['norm_obs'],
-            ctx=ctx)
+            ctx=ctx,
+            wrapper_params=args['wrappers'])
     eval_envs.training=False
 
 

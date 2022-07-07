@@ -110,9 +110,11 @@ def _flatten_obs(obs: List[np.array]) -> np.array:
     return stacked
 
 
-def create_env(name: str = 'HalfCheetah-v3', env_state: Optional[MjSimState] = None, seed=None):
+def create_env(name: str = 'HalfCheetah-v3', wrapper_params: dict = {}, env_state: Optional[MjSimState] = None, seed=None):
     env = MjTlSavingWrapper(gym.make(name))
     env = TrackLastReturnsWrapper(env)
+    if "delay" in wrapper_params:
+        env = DelayedRewardWrapper(env, delay=wrapper_params["delay"])
     env.reset()
     if env_state:
         env.set_state(env_state)
@@ -120,8 +122,8 @@ def create_env(name: str = 'HalfCheetah-v3', env_state: Optional[MjSimState] = N
         env.seed(seed)
     return env
 
-def make_env_fn(name: str = 'HalfCheetah-v3', env_state: Optional[MjSimState] = None, seed=None):
-    env_fn = functools.partial(create_env, name=name, env_state=env_state, seed=seed)
+def make_env_fn(name: str = 'HalfCheetah-v3', env_state: Optional[MjSimState] = None, seed=None, wrapper_params={},):
+    env_fn = functools.partial(create_env, name=name, env_state=env_state, seed=seed, wrapper_params=wrapper_params)
     return env_fn
 
 def make_vec_env(
@@ -130,11 +132,12 @@ def make_vec_env(
     num: int = 4, norm_r=True, 
     norm_obs=True, 
     seed=None,
-    ctx=None):
+    ctx=None,
+    wrapper_params={}):
     if seed is None:
-        env_func_list = [make_env_fn(name=name, env_state=env_state, seed=seed) for _ in range(num)]
+        env_func_list = [make_env_fn(name=name, env_state=env_state, seed=seed, wrapper_params=wrapper_params) for _ in range(num)]
     else:
-        env_func_list = [make_env_fn(name=name, env_state=env_state, seed=seed+i) for i in range(num)]
+        env_func_list = [make_env_fn(name=name, env_state=env_state, seed=seed+i, wrapper_params=wrapper_params) for i in range(num)]
     return VecNormalize(SubprocVecEnv(env_func_list, ctx=ctx), norm_obs=norm_obs, norm_reward=norm_r)
 
 
@@ -154,11 +157,12 @@ def get_env_fns(
     env_state: Optional[MjSimState] = None, 
     num: int = 4, norm_r=True, 
     norm_obs=True, 
-    seed=None):
+    seed=None,
+    wrapper_params={}):
     if seed is None:
-        env_func_list = [make_env_fn(name=name, env_state=env_state, seed=seed) for _ in range(num)]
+        env_func_list = [make_env_fn(name=name, env_state=env_state, seed=seed, wrapper_params=wrapper_params) for _ in range(num)]
     else:
-        env_func_list = [make_env_fn(name=name, env_state=env_state, seed=seed+i) for i in range(num)]
+        env_func_list = [make_env_fn(name=name, env_state=env_state, seed=seed+i, wrapper_params=wrapper_params) for i in range(num)]
     return env_func_list
 
 class DummySubprocVecEnv(SubprocVecEnv):
@@ -235,3 +239,21 @@ class TrackLastReturnsWrapper(gym.Wrapper):
     
     def get_last_return(self,):
         return self.last_full_return
+
+class DelayedRewardWrapper(gym.RewardWrapper):
+    def __init__(self, env, delay=0) -> None:
+        super().__init__(env)
+        self.buffer_size = delay + 1
+        self.reward_buffer = collections.deque(maxlen=self.buffer_size)
+
+    def reward(self, reward: float) -> float:
+        if len(self.reward_buffer) < self.buffer_size:
+            delayed_reward = 0
+        else:
+            delayed_reward = self.reward_buffer.popleft()
+            self.reward_buffer.append(reward)
+        return delayed_reward
+
+    def reset(self):
+        self.reward_buffer = collections.deque(maxlen=self.buffer_size)
+        return super().reset()

@@ -71,14 +71,16 @@ def main(args: dict):
         num=2, 
         norm_r=args['norm_r'], 
         norm_obs=args['norm_obs'],
-        ctx=ctx)
+        ctx=ctx,
+        wrapper_params=args['wrappers'],)
         
     k_envs_fn = functools.partial(make_vec_env,
         name=args['env_name'], 
         num=args['num_k_envs'], 
         norm_r=args['norm_r'], 
         norm_obs=args['norm_obs'],
-        ctx=ctx
+        ctx=ctx,
+        wrapper_params=args['wrappers'],
         )
     policy_model = POLICY_CLASSES[args['policy_type']](
         hidden_sizes=args['hidden_sizes'], 

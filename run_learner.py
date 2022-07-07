@@ -1,5 +1,6 @@
 import functools
 import os
+from textwrap import wrap
 
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
 import multiprocessing as mp
@@ -32,11 +33,6 @@ POLICY_CLASSES = {
     "DGPolicy": DGPolicy,
 }
 
-def _policy_fn(prngkey, observation, params, apply_fn, determenistic=False):
-    means, log_stds = apply_fn({'params': params}, observation)
-    sampled_actions  = means if determenistic else sample_action(prngkey, means, log_stds)
-    return sampled_actions
-
 def _value_and_policy_fn(prngkey, observation, params, vf_params, apply_fn, v_fn, determenistic=False):
     means, log_stds = apply_fn({'params': params}, observation)
     values = v_fn({'params': vf_params}, observation)
@@ -64,14 +60,16 @@ def main(args: dict):
         num=args['num_envs'], 
         norm_r=args['norm_r'], 
         norm_obs=args['norm_obs'],
-        ctx=ctx)
+        ctx=ctx,
+        wrapper_params=args['wrappers'],)
 
     eval_envs = make_vec_env(
             name=args['env_name'], 
             num=args['num_envs'], 
             norm_r=False, 
             norm_obs=args['norm_obs'],
-            ctx=ctx)
+            ctx=ctx,
+            wrapper_params=args['wrappers'])
     eval_envs.training=False
 
 
