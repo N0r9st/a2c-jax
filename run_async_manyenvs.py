@@ -16,8 +16,8 @@ from jax_a2c.distributions import sample_action_from_normal as sample_action
 from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
 from jax_a2c.evaluation import eval, q_eval
 from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy, VFunction, DGPolicy
-from jax_a2c.utils import (Experience, collect_experience, create_train_state, select_random_states,
-                           process_experience, concat_trajectories, process_base_rollout_output,
+from jax_a2c.utils import (Experience, collect_experience_withstate, create_train_state, select_random_states,
+                           get_startstates_noad_key, concat_trajectories, process_base_rollout_output,
                            stack_experiences, process_rollout_output,  process_mc_rollout_output,
                            calculate_interactions_per_epoch)
 from jax_a2c.km_mc_traj import km_mc_rollouts
@@ -30,117 +30,12 @@ POLICY_CLASSES = {
     'DiagGaussianStateDependentPolicy': DiagGaussianStateDependentPolicy,
     "DGPolicy": DGPolicy,
 }
-def _policy_fn(prngkey, observation, params, apply_fn, determenistic=False):
-    means, log_stds = apply_fn({'params': params}, observation)
-    sampled_actions  = means if determenistic else sample_action(prngkey, means, log_stds)
-    return sampled_actions
 
 def _value_and_policy_fn(prngkey, observation, params, vf_params, apply_fn, v_fn, determenistic=False):
     means, log_stds = apply_fn({'params': params}, observation)
     values = v_fn({'params': vf_params}, observation)
     sampled_actions  = means if determenistic else sample_action(prngkey, means, log_stds)
     return values, sampled_actions
-
-def collect_experience_withstate(
-    prngkey,
-    next_obs_and_dones_list: list,
-    envs, 
-    num_steps, 
-    policy_fn, 
-    ret_rms,
-    obs_rms,
-    initial_state_list: list,
-    ):
-
-    envs.training = True
-    envs.ret_rms = ret_rms
-    envs.obs_rms = obs_rms
-
-    experience_list_out = []
-
-    next_obs_and_dones_list_out = []
-    initial_state_list_out = []
-    for next_obs_and_dones, initial_state in zip(next_obs_and_dones_list, initial_state_list):
-        envs.set_state(initial_state)
-        next_observations, dones = next_obs_and_dones
-
-        observations_list = []
-        actions_list = []
-        rewards_list = []
-        values_list = []
-        dones_list = [dones]
-        states_list = [envs.get_state()]
-        next_observations_list = []
-
-
-        
-        for _ in range(num_steps):
-            observations = next_observations
-            _, prngkey = jax.random.split(prngkey)
-            values, actions = policy_fn(prngkey, observations) 
-            actions = np.array(actions)
-            next_observations, rewards, dones, info = envs.step(actions)
-            observations_list.append(observations)
-            actions_list.append(np.array(actions))
-            rewards_list.append(rewards)
-            values_list.append(values)
-            dones_list.append(dones)
-            states_list.append(envs.get_state())
-            next_observations_list.append(next_observations)
-            
-            
-
-        _, prngkey = jax.random.split(prngkey)
-        values, actions = policy_fn(prngkey, next_observations) 
-        values_list.append(values)
-
-        experience = Experience(
-            observations=np.stack(observations_list),
-            actions=np.stack(actions_list),
-            rewards=np.stack(rewards_list),
-            values=np.stack(values_list),
-            dones=np.stack(dones_list),
-            states=states_list,
-            next_observations=np.stack(next_observations_list)
-        )
-        experience_list_out.append(experience)
-        next_obs_and_dones_list_out.append((next_observations, dones))
-        initial_state_list_out.append(states_list[-1])
-    starter_info = dict(
-            initial_state_list=initial_state_list_out,
-            next_obs_and_dones_list=next_obs_and_dones_list_out,
-            prngkey=prngkey,
-            obs_rms=envs.obs_rms,
-            ret_rms=envs.ret_rms
-        )
-    return starter_info, experience_list_out
-
-def get_startstates_noad_key(k_envs, num_workers, prngkey: jax.random.PRNGKey, total_parallel):
-    out = []
-    keys = jax.random.split(prngkey, num=num_workers)
-    repeats_per_worker = total_parallel // (k_envs.num_envs * num_workers)
-    for i in range(num_workers):
-        states_list = []
-        next_obs_and_dones_list = []
-        
-        for j in range(repeats_per_worker):
-            next_obs = k_envs.reset()
-            next_obs_and_dones = (next_obs, np.array(next_obs.shape[0]*[False]))
-            states = k_envs.get_state()
-
-            next_obs_and_dones_list.append(next_obs_and_dones)
-            states_list.append(states)
-        out.append(
-            dict(
-                initial_state_list=states_list,
-                next_obs_and_dones_list=next_obs_and_dones_list,
-                prngkey=keys[i],
-                obs_rms=k_envs.obs_rms,
-                ret_rms=k_envs.ret_rms
-            )
-        )
-    return out
-
 
 def _worker(remote, k_remotes, parent_remote, spaces, device, add_args) -> None:
     print('D:', device)
@@ -149,7 +44,7 @@ def _worker(remote, k_remotes, parent_remote, spaces, device, add_args) -> None:
     k_envs = DummySubprocVecEnv(remotes=k_remotes)
     
     k_envs.observation_space, k_envs.action_space = spaces
-    k_envs = VecNormalize(k_envs, training=False)
+    k_envs = VecNormalize(k_envs, training=True)
     collect_experience_withstate_ = functools.partial(collect_experience_withstate, envs=k_envs)
 
     jit_value_and_policy_fn = jax.jit(add_args['policy_fn'], static_argnames=('determenistic',))
@@ -292,11 +187,11 @@ def main(args: dict):
     jit_q_fn = jax.jit(state.q_fn)
 
     interactions_per_epoch = calculate_interactions_per_epoch(args)
-    states_and_noad = get_startstates_noad_key(envs, args['num_workers'], prngkey, total_parallel=args['num_envs'])
+    startstates_and_noad = get_startstates_noad_key(envs, args['num_workers'], prngkey, total_parallel=args['num_envs'])
 
     for current_update in range(start_update, total_updates):
         st = time.time()
-
+        
         if current_update%args['eval_every']==0:
             eval_envs.obs_rms = deepcopy(train_obs_rms)
             _, eval_return = eval(state.apply_fn, state.params['policy_params'], eval_envs)
@@ -309,7 +204,7 @@ def main(args: dict):
         sampling_masks = []
         no_sampling_masks = []
         
-        for starter_info_lists, remote in zip(states_and_noad, remotes):
+        for starter_info_lists, remote in zip(startstates_and_noad, remotes):
             starter_info_lists.update(obs_rms=train_obs_rms, ret_rms=train_ret_rms,)
             starter_info_lists.update(num_steps=args['num_steps'],)
             to_worker = dict(
@@ -318,15 +213,22 @@ def main(args: dict):
                 args=starter_info_lists,
                 )
             remote.send(to_worker)
-        states_and_noad = []
+        startstates_and_noad = []
         exp_list = []
         for remote in remotes:
             # out = remote.recv()
             starter_info, exp_w_list = remote.recv()
             exp_list += exp_w_list
-            states_and_noad.append(starter_info)
-        train_obs_rms = states_and_noad[0]['obs_rms']
-        train_ret_rms = states_and_noad[0]['ret_rms']
+            startstates_and_noad.append(starter_info)
+        # train_obs_rms = startstates_and_noad[0]['obs_rms']
+        # train_ret_rms = startstates_and_noad[0]['ret_rms']
+        train_obs_rms.mean = np.mean([x["obs_rms"].mean for x in startstates_and_noad], axis=0)
+        train_obs_rms.var = np.mean([x["obs_rms"].var for x in startstates_and_noad], axis=0)
+
+        train_ret_rms.mean = np.mean([x["ret_rms"].mean for x in startstates_and_noad], axis=0)
+        train_ret_rms.var = np.mean([x["ret_rms"].var for x in startstates_and_noad], axis=0)
+        # TODO: INSERT STUFF
+        
 
         original_experience = stack_experiences(exp_list)
 

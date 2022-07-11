@@ -586,3 +586,106 @@ class PRF:
         if exc_type is not None:
             traceback.print_exception(exc_type, exc_value, tb)
         return True
+
+
+def collect_experience_withstate(
+    prngkey,
+    next_obs_and_dones_list: list,
+    envs, 
+    num_steps, 
+    policy_fn, 
+    ret_rms,
+    obs_rms,
+    initial_state_list: list,
+    ):
+
+    envs.training = True
+    envs.ret_rms = ret_rms
+    envs.obs_rms = obs_rms
+
+    experience_list_out = []
+
+    next_obs_and_dones_list_out = []
+    initial_state_list_out = []
+    for next_obs_and_dones, initial_state in zip(next_obs_and_dones_list, initial_state_list):
+        envs.set_state(initial_state)
+        next_observations, dones = next_obs_and_dones
+
+        observations_list = []
+        actions_list = []
+        rewards_list = []
+        values_list = []
+        dones_list = [dones]
+        states_list = [envs.get_state()]
+        next_observations_list = []
+
+
+        
+        for _ in range(num_steps):
+            observations = next_observations
+            _, prngkey = jax.random.split(prngkey)
+            values, actions = policy_fn(prngkey, observations) 
+            actions = np.array(actions)
+            next_observations, rewards, dones, info = envs.step(actions)
+            observations_list.append(observations)
+            actions_list.append(np.array(actions))
+            rewards_list.append(rewards)
+            values_list.append(values)
+            dones_list.append(dones)
+            states_list.append(envs.get_state())
+            next_observations_list.append(next_observations)
+            
+            
+
+        _, prngkey = jax.random.split(prngkey)
+        values, actions = policy_fn(prngkey, next_observations) 
+        values_list.append(values)
+
+        experience = Experience(
+            observations=np.stack(observations_list),
+            actions=np.stack(actions_list),
+            rewards=np.stack(rewards_list),
+            values=np.stack(values_list),
+            dones=np.stack(dones_list),
+            states=states_list,
+            next_observations=np.stack(next_observations_list)
+        )
+        experience_list_out.append(experience)
+        next_obs_and_dones_list_out.append((next_observations, dones))
+        initial_state_list_out.append(states_list[-1])
+    starter_info = dict(
+            initial_state_list=initial_state_list_out,
+            next_obs_and_dones_list=next_obs_and_dones_list_out,
+            prngkey=prngkey,
+            obs_rms=envs.obs_rms,
+            ret_rms=envs.ret_rms
+        )
+    return starter_info, experience_list_out
+
+
+
+def get_startstates_noad_key(k_envs, num_workers, prngkey: jax.random.PRNGKey, total_parallel):
+    out = []
+    keys = jax.random.split(prngkey, num=num_workers)
+    repeats_per_worker = total_parallel // (k_envs.num_envs * num_workers)
+    for i in range(num_workers):
+        states_list = []
+        next_obs_and_dones_list = []
+        
+        for j in range(repeats_per_worker):
+            next_obs = k_envs.reset()
+            next_obs_and_dones = (next_obs, np.array(next_obs.shape[0]*[False]))
+            states = k_envs.get_state()
+
+            next_obs_and_dones_list.append(next_obs_and_dones)
+            states_list.append(states)
+        out.append(
+            dict(
+                initial_state_list=states_list,
+                next_obs_and_dones_list=next_obs_and_dones_list,
+                prngkey=keys[i],
+                obs_rms=k_envs.obs_rms,
+                ret_rms=k_envs.ret_rms
+            )
+        )
+    return out
