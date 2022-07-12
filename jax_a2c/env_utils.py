@@ -113,7 +113,7 @@ def _flatten_obs(obs: List[np.array]) -> np.array:
 def create_env(name: str = 'HalfCheetah-v3', wrapper_params: dict = {}, env_state: Optional[MjSimState] = None, seed=None):
     env = MjTlSavingWrapper(gym.make(name))
     env = TrackLastReturnsWrapper(env)
-    if "delay" in wrapper_params:
+    if "delay" in wrapper_params and wrapper_params["delay"]>0:
         env = DelayedRewardWrapper(env, delay=wrapper_params["delay"])
     env.reset()
     if env_state:
@@ -247,11 +247,12 @@ class DelayedRewardWrapper(gym.RewardWrapper):
         self.reward_buffer = collections.deque(maxlen=self.buffer_size)
 
     def reward(self, reward: float) -> float:
+        self.reward_buffer.append(reward)
+
         if len(self.reward_buffer) < self.buffer_size:
             delayed_reward = 0
         else:
             delayed_reward = self.reward_buffer.popleft()
-        self.reward_buffer.append(reward)
         return delayed_reward
 
     def reset(self):
