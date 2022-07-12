@@ -1,5 +1,6 @@
 import functools
-from typing import Any, Callable, Dict, Tuple
+from tracemalloc import start
+from typing import Any, Callable, Dict, Tuple, Optional
 from collections import namedtuple
 import functools
 import time
@@ -98,9 +99,14 @@ def collect_experience(
     envs: jax_a2c.env_utils.SubprocVecEnv, 
     num_steps: int, 
     policy_fn: Callable, 
+    start_states: Optional[list] = None,
     )-> Tuple[Array, ...]:
 
     envs.training = True
+
+    if start_states is not None:
+        print("RETURNED TO LE STATES")
+        envs.set_state(start_states)
 
     next_observations, dones = next_obs_and_dones
 
@@ -141,7 +147,7 @@ def collect_experience(
         states=states_list,
         next_observations=np.stack(next_observations_list)
     )
-    return (next_observations, dones), experience
+    return (next_observations, dones),  states_list[-1],  experience
 
 @functools.partial(jax.jit, static_argnums=(1,2))
 def process_experience(

@@ -187,7 +187,7 @@ def main(args: dict):
     jit_q_fn = jax.jit(state.q_fn)
 
     interactions_per_epoch = calculate_interactions_per_epoch(args)
-    startstates_and_noad = get_startstates_noad_key(envs, args['num_workers'], prngkey, total_parallel=args['num_envs'])
+    starter_info_lists_per_worker = get_startstates_noad_key(envs, args['num_workers'], prngkey, total_parallel=args['num_envs'])
 
     for current_update in range(start_update, total_updates):
         st = time.time()
@@ -199,12 +199,8 @@ def main(args: dict):
         #------------------------------------------------
         #              WORKER ROLLOUTS
         #------------------------------------------------
-    
-        not_selected_observations_list = []
-        sampling_masks = []
-        no_sampling_masks = []
         
-        for starter_info_lists, remote in zip(startstates_and_noad, remotes):
+        for starter_info_lists, remote in zip(starter_info_lists_per_worker, remotes):
             starter_info_lists.update(obs_rms=train_obs_rms, ret_rms=train_ret_rms,)
             starter_info_lists.update(num_steps=args['num_steps'],)
             to_worker = dict(
@@ -213,85 +209,31 @@ def main(args: dict):
                 args=starter_info_lists,
                 )
             remote.send(to_worker)
-        startstates_and_noad = []
+        starter_info_lists_per_worker = []
         exp_list = []
         for remote in remotes:
             # out = remote.recv()
             starter_info, exp_w_list = remote.recv()
             exp_list += exp_w_list
-            startstates_and_noad.append(starter_info)
-        # train_obs_rms = startstates_and_noad[0]['obs_rms']
-        # train_ret_rms = startstates_and_noad[0]['ret_rms']
-        train_obs_rms.mean = np.mean([x["obs_rms"].mean for x in startstates_and_noad], axis=0)
-        train_obs_rms.var = np.mean([x["obs_rms"].var for x in startstates_and_noad], axis=0)
+            starter_info_lists_per_worker.append(starter_info)
+        train_obs_rms.mean = np.mean([x["obs_rms"].mean for x in starter_info_lists_per_worker], axis=0)
+        train_obs_rms.var = np.mean([x["obs_rms"].var for x in starter_info_lists_per_worker], axis=0)
 
-        train_ret_rms.mean = np.mean([x["ret_rms"].mean for x in startstates_and_noad], axis=0)
-        train_ret_rms.var = np.mean([x["ret_rms"].var for x in startstates_and_noad], axis=0)
-        # TODO: INSERT STUFF
+        train_ret_rms.mean = np.mean([x["ret_rms"].mean for x in starter_info_lists_per_worker], axis=0)
+        train_ret_rms.var = np.mean([x["ret_rms"].var for x in starter_info_lists_per_worker], axis=0)
         
 
         original_experience = stack_experiences(exp_list)
 
 
         base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
-        if args['type'] != 'standart':
-            # mc_oar = process_mc_rollout_output(state.apply_fn, state.params, mc_experience, args['train_constants'])
-            oar = dict(
-                observations=jnp.concatenate((base_oar['observations'], mc_oar['observations']), axis=0),
-                actions=jnp.concatenate((base_oar['actions'], mc_oar['actions']), axis=0),
-                returns=jnp.concatenate((base_oar['returns'], mc_oar['returns']), axis=0),
-                )
-            not_sampled_observations = jnp.concatenate(not_selected_observations_list, axis=0)
-        else:
-            negative_oar = None
-            mc_oar = None
-            oar = base_oar
-            not_sampled_observations = base_oar['observations'].reshape((-1, base_oar['observations'].shape[-1]))
-            sampling_masks = None
-            no_sampling_masks = None
-
-        
-
-        if args['train_constants']['q_updates'] is not None:
-            sampling_masks = jnp.stack(sampling_masks)
-            no_sampling_masks = jnp.stack(no_sampling_masks)
-            prngkey, _ = jax.random.split(prngkey)
-            q_train_oar, q_test_oar = general_train_test_split(
-                base_oar=base_oar,
-                mc_oar=mc_oar,
-                negative_oar=negative_oar,
-                sampling_masks=sampling_masks,
-                no_sampling_masks=no_sampling_masks,
-                prngkey=prngkey,
-                test_ratio=args['train_constants']['qf_test_ratio'],
-                k=args['K'],
-                nw=args['num_workers'],
-                num_steps=args['num_steps'],
-                num_envs=args['num_envs'],
-                use_base_traj_for_q=args['use_base_traj_for_q'],
-                split_type=args['split_type'],          
-            )
-
-            args['train_constants'] = args['train_constants'].copy({
-                'qf_update_batch_size':args['train_constants']['qf_update_batch_size'],
-                'q_train_len':len(q_train_oar['observations']),
-                })
-            state, (q_loss, q_loss_dict) = q_step(
-                state, 
-                q_train_oar, q_test_oar, # (Experience(original trajectory), List[dicts](kml trajs))
-                prngkey,
-                constant_params=args['train_constants'], jit_q_fn=jit_q_fn
-                )
-            state = state.replace(step=current_update)
-        else:
-            q_loss_dict = {}
 
         prngkey, _ = jax.random.split(prngkey)
         p_train_data_dict = {
-            'oar': oar,
+            'oar': base_oar,
             'base_oar': base_oar,
-            'mc_oar': mc_oar,
-            'not_sampled_observations': not_sampled_observations,
+            'mc_oar': dict(),
+            'not_sampled_observations': [],
             }
         state, (loss, loss_dict) = p_step(
             state, 
@@ -320,10 +262,8 @@ def main(args: dict):
             epoch_times = []
 
             loss_dict = jax.tree_map(lambda x: x.item(), loss_dict)
-            q_loss_dict = jax.tree_map(lambda x: x.item(), q_loss_dict)
             loss_dict['loss'] = loss.item()
             wandb.log({'training/' + k: v for k, v in loss_dict.items()}, step=current_update)
-            wandb.log({'q-training/' + k: v for k, v in q_loss_dict.items()}, step=current_update)
 
 if __name__=='__main__':
 

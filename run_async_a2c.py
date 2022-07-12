@@ -157,6 +157,7 @@ def main(args: dict):
 
     next_obs = envs.reset()
     next_obs_and_dones = (next_obs, np.array(next_obs.shape[0]*[False]))
+    last_collected_state = None
 
 
     # -----------------------------------------
@@ -232,12 +233,12 @@ def main(args: dict):
             for remote in remotes:
 
                 prngkey, _ = jax.random.split(prngkey)
-                next_obs_and_dones, experience = collect_experience(
+                next_obs_and_dones, last_collected_state, experience = collect_experience(
                     prngkey, 
                     next_obs_and_dones, 
                     envs, 
                     num_steps=args['num_steps']//args['num_workers'], 
-                    policy_fn=ready_value_and_policy_fn)
+                    policy_fn=ready_value_and_policy_fn, start_states=last_collected_state)
                 exp_list.append(experience)
 
                 
@@ -332,12 +333,12 @@ def main(args: dict):
             #----------------------------------------------------------------
         else:
             prngkey, _ = jax.random.split(prngkey)
-            next_obs_and_dones, original_experience = collect_experience(
+            next_obs_and_dones, last_collected_state, original_experience = collect_experience(
                 prngkey, 
                 next_obs_and_dones, 
                 envs, 
                 num_steps=args['num_steps'], 
-                policy_fn=ready_value_and_policy_fn,)
+                policy_fn=ready_value_and_policy_fn, start_states=last_collected_state)
         
         base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
 
