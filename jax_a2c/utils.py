@@ -359,6 +359,30 @@ def stack_experiences(exp_list, use_states=False):
         next_observations=next_observations
     )
 
+@functools.partial(jax.jit, static_argnames=("use_states",))
+def stack_experiences_horisontal(exp_list):
+    observations = jnp.concatenate([x.observations for x in exp_list], axis=1)
+    actions = jnp.concatenate([x.actions for x in exp_list], axis=1)
+    rewards = jnp.concatenate([x.rewards for x in exp_list], axis=1)
+    values = jnp.concatenate([x.values for x in exp_list], axis=1)
+    dones = jnp.concatenate([x.dones for x in exp_list], axis=1)
+    next_observations = jnp.concatenate([x.next_observations for x in exp_list], axis=1)
+
+    states = [[] for _ in range(observations.shape[0]+1)]
+    for num_step in range(len(states)):
+        for exp in exp_list:
+            states[num_step] += exp.states[num_step]
+
+    return Experience(
+        observations=observations,
+        actions=actions,
+        rewards=rewards,
+        values=values,
+        dones=dones,
+        states=states,
+        next_observations=next_observations
+    )
+
 def flatten_experience(experience: Experience): 
     num_steps, num_envs = experience.observations.shape[:2]
     return Experience(

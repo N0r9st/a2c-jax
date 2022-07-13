@@ -30,7 +30,7 @@ from jax_a2c.utils import (Experience, calculate_interactions_per_epoch,
                            create_train_state, process_base_rollout_output, get_next_obs_and_dones_per_worker,
                            process_experience, process_mc_rollout_output,
                            process_rollout_output, select_random_states,
-                           stack_experiences)
+                           stack_experiences, stack_experiences_horisontal)
 
 POLICY_CLASSES = {
     'DiagGaussianPolicy': DiagGaussianPolicy, 
@@ -208,7 +208,7 @@ def main(args: dict):
             new_start_collection_data.append((next_obs_and_dones, start_states))
             exp_list.append(original_experience)
         start_collection_data = new_start_collection_data
-        original_experience = stack_experiences(exp_list)
+        original_experience = stack_experiences_horisontal(exp_list)
         base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
         not_sampled_observations = base_oar['observations'].reshape((-1, base_oar['observations'].shape[-1]))
 

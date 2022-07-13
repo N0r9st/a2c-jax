@@ -19,7 +19,7 @@ from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDepen
 from jax_a2c.utils import (Experience, collect_experience_withstate, create_train_state, select_random_states,
                            get_startstates_noad_key, concat_trajectories, process_base_rollout_output,
                            stack_experiences, process_rollout_output,  process_mc_rollout_output,
-                           calculate_interactions_per_epoch)
+                           calculate_interactions_per_epoch, get_next_obs_and_dones_per_worker)
 from jax_a2c.km_mc_traj import km_mc_rollouts
 from jax_a2c.saving import save_state, load_state
 from flax.core import freeze
@@ -188,7 +188,7 @@ def main(args: dict):
 
     interactions_per_epoch = calculate_interactions_per_epoch(args)
     # starter_info_lists_per_worker = get_startstates_noad_key(envs, args['num_workers'], prngkey, total_parallel=args['num_envs'])
-    next_obs_and_dones_per_worker = get_next_obs_and_dones_per_worker(envs, args['num_workers'], prngkey, total_parallel=args['num_envs'])
+    start_collection_data = get_next_obs_and_dones_per_worker(envs, args['num_workers'], args['num_envs'])
 
     for current_update in range(start_update, total_updates):
         st = time.time()
@@ -201,22 +201,37 @@ def main(args: dict):
         #              WORKER ROLLOUTS
         #------------------------------------------------
         
-        for starter_info_lists, remote in zip(starter_info_lists_per_worker, remotes):
-            starter_info_lists.update(obs_rms=train_obs_rms, ret_rms=train_ret_rms,)
-            starter_info_lists.update(num_steps=args['num_steps'],)
+        for (next_obs_and_dones, start_states), remote in zip(start_collection_data, remotes):
+            # starter_info_lists.update(obs_rms=train_obs_rms, ret_rms=train_ret_rms,)
+            # starter_info_lists.update(num_steps=args['num_steps'],)
+            collect_experience_args = dict(
+                prngkey=prngkey,
+                next_obs_and_dones=next_obs_and_dones,
+                start_states=start_states,
+                num_steps=args['num_envs'],
+            )
             to_worker = dict(
                 policy_params=state.params['policy_params'],
                 vf_params=state.params['vf_params'],
-                args=starter_info_lists,
+                collect_experience_args=collect_experience_args,
+                obs_rms=train_obs_rms,
+                ret_rms=train_ret_rms,
                 )
             remote.send(to_worker)
-        starter_info_lists_per_worker = []
+        new_start_collection_data = []
         exp_list = []
+        obs_rms_list = []
+        ret_rms_list = []
         for remote in remotes:
             # out = remote.recv()
-            starter_info, exp_w_list = remote.recv()
-            exp_list += exp_w_list
-            starter_info_lists_per_worker.append(starter_info)
+            # (next_obs_and_dones, start_states), w_obs_rms, w_ret_rms, experience = remote.recv()
+            worker_return_dict = remote.recv()
+            exp_list.append(worker_return_dict['experience'])
+            new_start_collection_data.append(
+                (worker_return_dict['next_obs_and_dones'], worker_return_dict['start_states'])
+                )
+            obs_rms_list.append(worker_return_dict['obs_rms'])
+            ret_rms_list.append(worker_return_dict['ret_rms'])
         train_obs_rms.mean = np.mean([x["obs_rms"].mean for x in starter_info_lists_per_worker], axis=0)
         train_obs_rms.var = np.mean([x["obs_rms"].var for x in starter_info_lists_per_worker], axis=0)
 
