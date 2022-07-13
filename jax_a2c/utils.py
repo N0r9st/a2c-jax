@@ -367,11 +367,12 @@ def stack_experiences_horisontal(exp_list):
     values = jnp.concatenate([x.values for x in exp_list], axis=1)
     dones = jnp.concatenate([x.dones for x in exp_list], axis=1)
     next_observations = jnp.concatenate([x.next_observations for x in exp_list], axis=1)
-
-    states = [[] for _ in range(observations.shape[0]+1)]
+    states = []
     for num_step in range(len(states)):
+        current_step = []
         for exp in exp_list:
-            states[num_step] += exp.states[num_step]
+            current_step += exp.states[num_step]
+        states.append(current_step)
 
     return Experience(
         observations=observations,

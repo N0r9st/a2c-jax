@@ -241,14 +241,12 @@ def main(args: dict):
                 )
             obs_rms_list.append(worker_return_dict['obs_rms'])
             ret_rms_list.append(worker_return_dict['ret_rms'])
-
+        
         start_collection_data = new_start_collection_data
         train_obs_rms = obs_rms_list[0]
         train_ret_rms = ret_rms_list[0]
         
-
         original_experience = stack_experiences_horisontal(exp_list)
-
 
         base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
 
