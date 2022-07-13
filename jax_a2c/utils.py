@@ -1,9 +1,11 @@
 import functools
-from tracemalloc import start
-from typing import Any, Callable, Dict, Tuple, Optional
+import itertools
+from re import A
+from typing import Any, Callable, Dict, Tuple, Optional, List
 from collections import namedtuple
 import functools
 import time
+import math
 import traceback
 
 import jax
@@ -95,7 +97,7 @@ def gae_advantages(
 
 def collect_experience(
     prngkey: PRNGKey,
-    next_obs_and_dones: Array,
+    next_obs_and_dones: Tuple[Array],
     envs: jax_a2c.env_utils.SubprocVecEnv, 
     num_steps: int, 
     policy_fn: Callable, 
@@ -147,7 +149,7 @@ def collect_experience(
         states=states_list,
         next_observations=np.stack(next_observations_list)
     )
-    return (next_observations, dones),  states_list[-1],  experience
+    return (next_observations, dones), experience
 
 @functools.partial(jax.jit, static_argnums=(1,2))
 def process_experience(
@@ -670,28 +672,119 @@ def collect_experience_withstate(
 
 
 
-def get_startstates_noad_key(k_envs, num_workers, prngkey: jax.random.PRNGKey, total_parallel):
-    out = []
-    keys = jax.random.split(prngkey, num=num_workers)
-    repeats_per_worker = total_parallel // (k_envs.num_envs * num_workers)
-    for i in range(num_workers):
-        states_list = []
-        next_obs_and_dones_list = []
+def get_next_obs_and_dones_per_worker(k_envs, num_workers, num_envs) -> List[Tuple]:
+    # out = []
+    # keys = jax.random.split(prngkey, num=num_workers)
+    # repeats_per_worker = total_parallel // (k_envs.num_envs * num_workers)
+    # for i in range(num_workers):
+    #     states_list = []
+    #     next_obs_and_dones_list = []
         
-        for j in range(repeats_per_worker):
-            next_obs = k_envs.reset()
-            next_obs_and_dones = (next_obs, np.array(next_obs.shape[0]*[False]))
-            states = k_envs.get_state()
+    #     for j in range(repeats_per_worker):
+    #         next_obs = k_envs.reset()
+    #         next_obs_and_dones = (next_obs, np.array(next_obs.shape[0]*[False]))
+    #         states = k_envs.get_state()
 
-            next_obs_and_dones_list.append(next_obs_and_dones)
-            states_list.append(states)
-        out.append(
-            dict(
-                initial_state_list=states_list,
-                next_obs_and_dones_list=next_obs_and_dones_list,
-                prngkey=keys[i],
-                obs_rms=k_envs.obs_rms,
-                ret_rms=k_envs.ret_rms
-            )
-        )
-    return out
+    #         next_obs_and_dones_list.append(next_obs_and_dones)
+    #         states_list.append(states)
+    #     out.append(
+    #         dict(
+    #             initial_state_list=states_list,
+    #             next_obs_and_dones_list=next_obs_and_dones_list,
+    #             prngkey=keys[i],
+    #             obs_rms=k_envs.obs_rms,
+    #             ret_rms=k_envs.ret_rms
+    #         )
+    #     )
+    # return out
+    next_obs = np.zeros((num_envs,)+k_envs.observation_space.shape)
+    dones = np.array([False]*num_envs)
+    per_worker = math.ceil(num_envs / num_workers)
+
+    n_full_repeats = num_envs//k_envs.num_envs
+
+    start_states = []
+    for i in range(n_full_repeats):
+        next_o = k_envs.reset()
+        start_states += k_envs.get_state()
+        next_obs[i*k_envs.num_envs:(i+1)*k_envs.num_envs] = next_o
+
+
+    return [
+        ((next_obs[i*per_worker:(i+1)*per_worker], dones[i*per_worker:(i+1)*per_worker]), \
+            start_states[i*per_worker:(i+1)*per_worker]) for i in range(num_workers)
+    ]
+
+
+def collect_experience_manyenvs(
+    prngkey: PRNGKey,
+    next_obs_and_dones: Tuple[Array],
+    envs: jax_a2c.env_utils.SubprocVecEnv, 
+    num_steps: int, 
+    policy_fn: Callable, 
+    start_states: list,
+    )-> Tuple[Array, ...]:
+
+    envs.training = True
+
+    # envs.set_state(start_states)
+
+    next_observations, dones = next_obs_and_dones
+    num_envs = next_observations.shape[0]
+    num_slices = num_envs//envs.num_envs
+    num_envs = num_slices * envs.num_envs
+
+    observations_array = np.zeros((num_steps, num_envs) + envs.observation_space.shape)
+    actions_array = np.zeros((num_steps, num_envs) + envs.action_space.shape)
+    rewards_array = np.zeros((num_steps, num_envs))
+    values_array = np.zeros((num_steps+1, num_envs))
+
+    dones_array = np.zeros((num_steps+1, num_envs), dtype=bool)
+    dones_array[0] = dones
+
+    states_list = [[None]*num_envs for _ in range(num_steps+1)]
+    states_list[0] = start_states
+    next_observations_array = np.zeros((num_steps, num_envs) + envs.observation_space.shape)
+
+    
+
+    for i in range(num_slices):
+        env_slice_start = i * envs.num_envs
+        env_slice_end = (i + 1) * envs.num_envs
+        envs.set_state(start_states[env_slice_start:env_slice_end])
+
+        next_o = next_observations[env_slice_start:env_slice_end]
+
+        for current_step in range(num_steps):
+            o = next_o
+            _, prngkey = jax.random.split(prngkey)
+            values, a = policy_fn(prngkey, o) 
+            a = np.array(a)
+            next_o, r, d, _ = envs.step(a)
+            observations_array[current_step, env_slice_start:env_slice_end] = o
+            next_observations_array[current_step, env_slice_start:env_slice_end] = next_o
+            actions_array[current_step, env_slice_start:env_slice_end] = a
+            rewards_array[current_step, env_slice_start:env_slice_end] = r
+            dones_array[current_step+1, env_slice_start:env_slice_end] = d
+            values_array[current_step, env_slice_start:env_slice_end] = values
+            states_list[current_step+1][env_slice_start:env_slice_end] = envs.get_state()   
+            
+
+        _, prngkey = jax.random.split(prngkey)
+        values, actions = policy_fn(prngkey, next_o) 
+        values_array[current_step + 1, env_slice_start:env_slice_end] = values
+
+    experience = Experience(
+        observations=observations_array,
+        actions=actions_array,
+        rewards=rewards_array,
+        values=values_array,
+        dones=dones_array,
+        states=states_list,
+        next_observations=next_observations_array,
+    )
+    return (next_observations_array[-1], dones_array[-1]), states_list[-1], experience
+
+
+
+    
