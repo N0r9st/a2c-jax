@@ -14,12 +14,12 @@ from jax_a2c.a2c import p_step
 from jax_a2c.q_updates import q_step, train_test_split, test_qf, train_test_split_k_repeat, general_train_test_split
 from jax_a2c.distributions import sample_action_from_normal as sample_action
 from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
-from jax_a2c.evaluation import eval, q_eval
+from jax_a2c.evaluation import eval
 from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy, VFunction, DGPolicy
-from jax_a2c.utils import (Experience, collect_experience_withstate, create_train_state, select_random_states,
-                           get_startstates_noad_key, concat_trajectories, process_base_rollout_output,
+from jax_a2c.utils import (Experience, collect_experience_manyenvs, collect_experience_withstate, create_train_state, select_random_states,
+                           concat_trajectories, process_base_rollout_output,
                            stack_experiences, process_rollout_output,  process_mc_rollout_output,
-                           calculate_interactions_per_epoch, get_next_obs_and_dones_per_worker)
+                           calculate_interactions_per_epoch, get_next_obs_and_dones_per_worker, stack_experiences_horisontal)
 from jax_a2c.km_mc_traj import km_mc_rollouts
 from jax_a2c.saving import save_state, load_state
 from flax.core import freeze
@@ -45,7 +45,6 @@ def _worker(remote, k_remotes, parent_remote, spaces, device, add_args) -> None:
     
     k_envs.observation_space, k_envs.action_space = spaces
     k_envs = VecNormalize(k_envs, training=True)
-    collect_experience_withstate_ = functools.partial(collect_experience_withstate, envs=k_envs)
 
     jit_value_and_policy_fn = jax.jit(add_args['policy_fn'], static_argnames=('determenistic',))
 
@@ -57,11 +56,22 @@ def _worker(remote, k_remotes, parent_remote, spaces, device, add_args) -> None:
                 jit_value_and_policy_fn, 
                 params=args['policy_params'],
                 vf_params=args['vf_params'])
+            k_envs.obs_rms=args['obs_rms']
+            k_envs.ret_rms=args['ret_rms']
+            next_obs_and_dones, start_states, experience = collect_experience_manyenvs(
+                envs=k_envs,
+                policy_fn=policy_fn, 
+                **args['collect_experience_args'])
 
-            out = collect_experience_withstate_(policy_fn=policy_fn, **args['args'])
-            
-            
-            remote.send(out)
+            out_dict = dict(
+                experience=experience,
+                next_obs_and_dones=next_obs_and_dones,
+                start_states=start_states,
+                obs_rms=k_envs.obs_rms,
+                ret_rms=k_envs.ret_rms
+
+            )
+            remote.send(out_dict)
         except EOFError:
             break
 
@@ -223,8 +233,7 @@ def main(args: dict):
         obs_rms_list = []
         ret_rms_list = []
         for remote in remotes:
-            # out = remote.recv()
-            # (next_obs_and_dones, start_states), w_obs_rms, w_ret_rms, experience = remote.recv()
+            prngkey, _ = jax.random.split(prngkey)
             worker_return_dict = remote.recv()
             exp_list.append(worker_return_dict['experience'])
             new_start_collection_data.append(
@@ -232,14 +241,13 @@ def main(args: dict):
                 )
             obs_rms_list.append(worker_return_dict['obs_rms'])
             ret_rms_list.append(worker_return_dict['ret_rms'])
-        train_obs_rms.mean = np.mean([x["obs_rms"].mean for x in starter_info_lists_per_worker], axis=0)
-        train_obs_rms.var = np.mean([x["obs_rms"].var for x in starter_info_lists_per_worker], axis=0)
 
-        train_ret_rms.mean = np.mean([x["ret_rms"].mean for x in starter_info_lists_per_worker], axis=0)
-        train_ret_rms.var = np.mean([x["ret_rms"].var for x in starter_info_lists_per_worker], axis=0)
+        start_collection_data = new_start_collection_data
+        train_obs_rms = obs_rms_list[0]
+        train_ret_rms = ret_rms_list[0]
         
 
-        original_experience = stack_experiences(exp_list)
+        original_experience = stack_experiences_horisontal(exp_list)
 
 
         base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])

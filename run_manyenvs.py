@@ -54,30 +54,6 @@ def _value_and_policy_fn(prngkey, observation, params, vf_params, apply_fn, v_fn
     sampled_actions  = means if determenistic else sample_action(prngkey, means, log_stds)
     return values, sampled_actions
 
-def _worker(remote, k_remotes, parent_remote, spaces, device, add_args) -> None:
-    print('D:', device)
-    os.environ['CUDA_VISIBLE_DEVICES'] = str(device)
-    parent_remote.close()
-    k_envs = DummySubprocVecEnv(remotes=k_remotes)
-    
-    k_envs.observation_space, k_envs.action_space = spaces
-    k_envs = VecNormalize(k_envs, training=False)
-    km_mc_rollouts_ = functools.partial(km_mc_rollouts, k_envs=k_envs)
-
-    _policy_fn = jax.jit(add_args['policy_fn'], static_argnames=('determenistic',))
-    v_fn = jax.jit(add_args['v_fn'])
-
-    while True:
-        try:
-            args = remote.recv()
-            k_envs.obs_rms = args.pop('train_obs_rms')
-            k_envs.ret_rms = args.pop('train_ret_rms')
-            policy_fn = functools.partial(_policy_fn, **(args.pop('policy_fn')))
-            out = km_mc_rollouts_(policy_fn=policy_fn, v_fn=v_fn, vf_params=args.pop('vf_params'), **args)
-            remote.send(out)
-        except EOFError:
-            break
-
 def main(args: dict):
     args['async'] = True
     if not args['split_between_devices']:
