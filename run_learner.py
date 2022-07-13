@@ -147,8 +147,8 @@ def main(args: dict):
     if args['wb_flag']:
         RESULT_PREFIX += wandb_run_id
     server = KLMJobServer(host=args['redis_host'], port=args['redis_port'], password='fuckingpassword')
-    print(RESULT_PREFIX)
     server.reset_queue(prefix=RESULT_PREFIX)
+    server.reset_queue()
     
     # ------------------------------------------
 
