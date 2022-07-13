@@ -18,7 +18,7 @@ from jax_a2c.evaluation import eval
 from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy, VFunction, DGPolicy
 from jax_a2c.utils import (Experience, collect_experience_manyenvs, collect_experience_withstate, create_train_state, select_random_states,
                            concat_trajectories, process_base_rollout_output,
-                           stack_experiences, process_rollout_output,  process_mc_rollout_output,
+                           stack_experiences, process_rollout_output,  process_mc_rollout_output, PRF,
                            calculate_interactions_per_epoch, get_next_obs_and_dones_per_worker, stack_experiences_horisontal)
 from jax_a2c.km_mc_traj import km_mc_rollouts
 from jax_a2c.saving import save_state, load_state
@@ -50,7 +50,8 @@ def _worker(remote, k_remotes, parent_remote, spaces, device, add_args) -> None:
 
     while True:
         try:
-            args = remote.recv()
+            for _ in range(2):
+                args = remote.recv()
             # policy_fn = functools.partial(_policy_fn, **(args.pop('policy_fn')))
             policy_fn = functools.partial(
                 jit_value_and_policy_fn, 
@@ -71,7 +72,8 @@ def _worker(remote, k_remotes, parent_remote, spaces, device, add_args) -> None:
                 ret_rms=k_envs.ret_rms
 
             )
-            remote.send(out_dict)
+            for _ in range(2):
+                remote.send(out_dict)
         except EOFError:
             break
 
@@ -194,10 +196,8 @@ def main(args: dict):
 
     args['train_constants'] = freeze(args['train_constants'])
 
-    jit_q_fn = jax.jit(state.q_fn)
-
     interactions_per_epoch = calculate_interactions_per_epoch(args)
-    # starter_info_lists_per_worker = get_startstates_noad_key(envs, args['num_workers'], prngkey, total_parallel=args['num_envs'])
+
     start_collection_data = get_next_obs_and_dones_per_worker(envs, args['num_workers'], args['num_envs'])
 
     for current_update in range(start_update, total_updates):
@@ -212,8 +212,6 @@ def main(args: dict):
         #------------------------------------------------
         
         for (next_obs_and_dones, start_states), remote in zip(start_collection_data, remotes):
-            # starter_info_lists.update(obs_rms=train_obs_rms, ret_rms=train_ret_rms,)
-            # starter_info_lists.update(num_steps=args['num_steps'],)
             collect_experience_args = dict(
                 prngkey=prngkey,
                 next_obs_and_dones=next_obs_and_dones,
@@ -227,14 +225,16 @@ def main(args: dict):
                 obs_rms=train_obs_rms,
                 ret_rms=train_ret_rms,
                 )
-            remote.send(to_worker)
+            for _ in range(2):
+                remote.send(to_worker)
         new_start_collection_data = []
         exp_list = []
         obs_rms_list = []
         ret_rms_list = []
         for remote in remotes:
             prngkey, _ = jax.random.split(prngkey)
-            worker_return_dict = remote.recv()
+            for _ in range(2):
+                worker_return_dict = remote.recv()
             exp_list.append(worker_return_dict['experience'])
             new_start_collection_data.append(
                 (worker_return_dict['next_obs_and_dones'], worker_return_dict['start_states'])

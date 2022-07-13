@@ -170,7 +170,7 @@ def main(args: dict):
         base_prefix="manyenvs_")
     print(RESULT_PREFIX)
     server.reset_queue(prefix=RESULT_PREFIX)
-    # server.reset_queue()
+    server.reset_queue()
     
     # ------------------------------------------
 
@@ -180,7 +180,7 @@ def main(args: dict):
     args['train_constants'] = freeze(args['train_constants'])
 
     interactions_per_epoch = calculate_interactions_per_epoch(args)
-    states_and_noad = get_startstates_noad_key(envs, args['n_packages'], prngkey, total_parallel=args['num_envs'])
+    start_collection_data = get_next_obs_and_dones_per_worker(envs, args['num_workers'], args['num_envs'])
 
     for current_update in range(start_update, total_updates):
         st = time.time()
@@ -195,17 +195,34 @@ def main(args: dict):
     
         exp_list = []
         not_selected_observations_list = []
-        sampling_masks = []
-        no_sampling_masks = []
-        
+
         with PRF("SENDING JOBS"):
-            for starter_info_lists in states_and_noad:
-                starter_info_lists.update(obs_rms=train_obs_rms, ret_rms=train_ret_rms,)
-                starter_info_lists.update(num_steps=args['num_steps'],)
+            # for starter_info_lists in states_and_noad:
+            #     starter_info_lists.update(obs_rms=train_obs_rms, ret_rms=train_ret_rms,)
+            #     starter_info_lists.update(num_steps=args['num_steps'],)
+            #     to_worker = dict(
+            #         policy_params=state.params['policy_params'],
+            #         vf_params=state.params['vf_params'],
+            #         args=starter_info_lists,
+            #         iteration=current_update,
+            #         prefix=RESULT_PREFIX,
+            #         )
+            #     server.add_jobs(to_worker)
+            #     print(current_update, '- ADDED JOB')
+
+            for next_obs_and_dones, start_states in start_collection_data:
+                collect_experience_args = dict(
+                    prngkey=prngkey,
+                    next_obs_and_dones=next_obs_and_dones,
+                    start_states=start_states,
+                    num_steps=args['num_envs'],
+                )
                 to_worker = dict(
                     policy_params=state.params['policy_params'],
                     vf_params=state.params['vf_params'],
-                    args=starter_info_lists,
+                    collect_experience_args=collect_experience_args,
+                    obs_rms=train_obs_rms,
+                    ret_rms=train_ret_rms,
                     iteration=current_update,
                     prefix=RESULT_PREFIX,
                     )
@@ -234,21 +251,13 @@ def main(args: dict):
 
 
             base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
-        if args['type'] != 'standart':
-            # mc_oar = process_mc_rollout_output(state.apply_fn, state.params, mc_experience, args['train_constants'])
-            oar = dict(
-                observations=jnp.concatenate((base_oar['observations'], mc_oar['observations']), axis=0),
-                actions=jnp.concatenate((base_oar['actions'], mc_oar['actions']), axis=0),
-                returns=jnp.concatenate((base_oar['returns'], mc_oar['returns']), axis=0),
-                )
-            not_sampled_observations = jnp.concatenate(not_selected_observations_list, axis=0)
-        else:
-            negative_oar = None
-            mc_oar = None
-            oar = base_oar
-            not_sampled_observations = base_oar['observations'].reshape((-1, base_oar['observations'].shape[-1]))
-            sampling_masks = None
-            no_sampling_masks = None
+
+        negative_oar = None
+        mc_oar = None
+        oar = base_oar
+        not_sampled_observations = base_oar['observations'].reshape((-1, base_oar['observations'].shape[-1]))
+        sampling_masks = None
+        no_sampling_masks = None
 
         prngkey, _ = jax.random.split(prngkey)
         p_train_data_dict = {
