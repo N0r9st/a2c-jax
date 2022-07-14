@@ -1,29 +1,30 @@
 import functools
 import os
+
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
-from copy import deepcopy
+import multiprocessing as mp
 import time
+from copy import deepcopy
+
 import jax
 import jax.numpy as jnp
 import numpy as np
-import wandb
-import itertools
-import multiprocessing as mp
-
-from jax_a2c.a2c import p_step
-from jax_a2c.q_updates import q_step, train_test_split, test_qf, train_test_split_k_repeat, general_train_test_split
-from jax_a2c.distributions import sample_action_from_normal as sample_action
-from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
-from jax_a2c.evaluation import eval
-from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy, VFunction, DGPolicy
-from jax_a2c.utils import (Experience, collect_experience_manyenvs, collect_experience_withstate, create_train_state, np_process_single_mc_rollout_output_fulldata, select_random_states,
-                           concat_trajectories, process_base_rollout_output,
-                           stack_experiences, process_rollout_output,  process_mc_rollout_output, PRF,
-                           calculate_interactions_per_epoch, get_next_obs_and_dones_per_worker, stack_experiences_horisontal)
-from jax_a2c.km_mc_traj import km_mc_rollouts
-from jax_a2c.saving import save_state, load_state
 from flax.core import freeze
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
+
+import wandb
+from jax_a2c.a2c import p_step
+from jax_a2c.distributions import sample_action_from_normal as sample_action
+from jax_a2c.env_utils import DummySubprocVecEnv, make_vec_env, run_workers
+from jax_a2c.evaluation import eval
+from jax_a2c.policy import (DGPolicy, DiagGaussianPolicy,
+                            DiagGaussianStateDependentPolicy, QFunction,
+                            VFunction)
+from jax_a2c.saving import load_state, save_state
+from jax_a2c.utils import (calculate_interactions_per_epoch,
+                           collect_experience_manyenvs, create_train_state,
+                           get_next_obs_and_dones_per_worker,
+                           np_process_single_mc_rollout_output_fulldata)
 
 POLICY_CLASSES = {
     'DiagGaussianPolicy': DiagGaussianPolicy, 

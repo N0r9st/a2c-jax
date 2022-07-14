@@ -5,11 +5,7 @@ import flax
 import jax
 import jax.numpy as jnp
 
-from jax_a2c.distributions import evaluate_actions_norm as evaluate_actions
-from jax_a2c.distributions import sample_action_from_normal as sample_action
-from jax_a2c.utils import (PRNGKey, calculate_action_logprobs, process_mc_rollouts,
-                           vmap_process_mc_rollouts,
-                           vmap_process_rewards_with_entropy, process_experience_with_entropy)
+from jax_a2c.utils import PRNGKey
 
 Array = Any
 
@@ -317,31 +313,3 @@ def general_train_test_split(
 
     return q_train_oar, q_test_oar
 
-
-@jax.vmap
-def apply_mask(obs_pack, mask):
-    return obs_pack[mask]
-
-@jax.jit
-@jax.vmap
-def apply_mask_dict(oar_pack, mask):
-    return jax.tree_util.tree_map(lambda x: x[mask], oar_pack)
-
-# @functools.partial(jax.jit, static_argnames=('nw',))
-def train_test_base_separateacts(base_oar, sampling_masks, no_sampling_masks, test_choices, non_test_choices, nw):
-    """ separates base_oar on train and test so no test instances are in test_choices
-    """
-    base_oar = jax.tree_util.tree_map(lambda x: x.reshape((nw, x.shape[0]//nw,) + x.shape[1:]), base_oar)
-    can_use_oar_nonsampled = apply_mask_dict(base_oar, no_sampling_masks)
-    can_oar_sampled = apply_mask_dict(base_oar, sampling_masks)
-
-    # can_use_oar_sampled = apply_mask_dict(can_oar_sampled, non_test_choices)
-    # cant_use_oar = apply_mask_dict(can_oar_sampled, test_choices)
-    can_use_oar_sampled = jax.tree_util.tree_map(lambda x: x[:, non_test_choices], can_oar_sampled)
-    cant_use_oar = jax.tree_util.tree_map(lambda x: x[:, test_choices], can_oar_sampled)
-    
-    can_use_oar_nonsampled = jax.tree_util.tree_map(lambda x: x.reshape(-1, x.shape[-1]), can_use_oar_nonsampled)
-    can_use_oar_sampled = jax.tree_util.tree_map(lambda x: x.reshape(-1, x.shape[-1]), can_use_oar_sampled)
-    cant_use_oar = jax.tree_util.tree_map(lambda x: x.reshape(-1, x.shape[-1]), cant_use_oar)
-    return can_use_oar_nonsampled, can_use_oar_sampled, cant_use_oar
-    

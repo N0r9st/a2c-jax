@@ -2,35 +2,28 @@ import functools
 import os
 
 os.environ['XLA_PYTHON_CLIENT_PREALLOCATE'] = 'false'
-import itertools
 import multiprocessing as mp
 import time
 from copy import deepcopy
 
 import jax
-import jax.numpy as jnp
 import numpy as np
 from flax.core import freeze
-from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
 
 import wandb
 from jax_a2c.a2c import p_step
 from jax_a2c.distributions import sample_action_from_normal as sample_action
-from jax_a2c.env_utils import DummySubprocVecEnv, make_vec_env, run_workers
-from jax_a2c.evaluation import eval, q_eval
-from jax_a2c.km_mc_traj import km_mc_rollouts
+from jax_a2c.env_utils import make_vec_env
+from jax_a2c.evaluation import eval
 from jax_a2c.policy import (DGPolicy, DiagGaussianPolicy,
                             DiagGaussianStateDependentPolicy, QFunction,
                             QS0Function, QS1Function, VFunction)
-from jax_a2c.q_updates import (general_train_test_split, q_step, test_qf,
-                               train_test_split, train_test_split_k_repeat)
 from jax_a2c.saving import load_state, save_state
-from jax_a2c.utils import (Experience, calculate_interactions_per_epoch,
-                           collect_experience, concat_trajectories, collect_experience_manyenvs, 
-                           create_train_state, process_base_rollout_output, get_next_obs_and_dones_per_worker,
-                           process_experience, process_mc_rollout_output,
-                           process_rollout_output, select_random_states,
-                           stack_experiences, stack_experiences_horisontal)
+from jax_a2c.utils import (calculate_interactions_per_epoch,
+                           collect_experience_manyenvs, create_train_state,
+                           get_next_obs_and_dones_per_worker,
+                           process_base_rollout_output,
+                           stack_experiences_horisontal)
 
 POLICY_CLASSES = {
     'DiagGaussianPolicy': DiagGaussianPolicy, 

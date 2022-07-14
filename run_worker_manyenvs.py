@@ -10,7 +10,6 @@ from jax_a2c.distributions import sample_action_from_normal as sample_action
 from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers_multihost as run_workers
 from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy, VFunction, DGPolicy
 from jax_a2c.utils import create_train_state
-from jax_a2c.km_mc_traj import km_mc_rollouts
 from stable_baselines3.common.vec_env.vec_normalize import VecNormalize
 from multihost.job_server import KLMJobServer
 from jax_a2c.utils import Experience

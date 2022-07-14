@@ -17,19 +17,17 @@ import wandb
 from jax_a2c.a2c import p_step
 from jax_a2c.distributions import sample_action_from_normal as sample_action
 from jax_a2c.env_utils import DummySubprocVecEnv, make_vec_env, run_workers
-from jax_a2c.evaluation import eval, q_eval
+from jax_a2c.evaluation import eval
 from jax_a2c.km_mc_traj import km_mc_rollouts
 from jax_a2c.policy import (DGPolicy, DiagGaussianPolicy,
                             DiagGaussianStateDependentPolicy, QFunction,
                             QS0Function, QS1Function, VFunction)
-from jax_a2c.q_updates import (general_train_test_split, q_step, test_qf,
-                               train_test_split, train_test_split_k_repeat)
+from jax_a2c.q_updates import (general_train_test_split, q_step, )
 from jax_a2c.saving import load_state, save_state
 from jax_a2c.utils import (Experience, calculate_interactions_per_epoch,
-                           collect_experience, concat_trajectories, collect_experience_manyenvs,
+                           collect_experience,
                            create_train_state, process_base_rollout_output,
-                           process_experience, process_mc_rollout_output,
-                           process_rollout_output, select_random_states,
+                           process_experience, select_random_states,
                            stack_experiences)
 
 POLICY_CLASSES = {
