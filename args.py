@@ -105,6 +105,8 @@ def parse_args():
     parser.add_argument('--process-full', action='store_true', default=False)
     parser.add_argument('--q-function', type=str, default="QFunction")
     parser.add_argument('--delay', type=int, default=0)
+    parser.add_argument('--load-rms', action='store_true', default=False)
+
 
     args = parser.parse_args()
     return args
@@ -274,6 +276,7 @@ def update(args, cmd_args):
     args['wrappers'] = dict(
         delay=cmd_args.delay
     )
+    args['load_rms'] = cmd_args.load_rms
     return args
 
 args = update(args, cmd_args)
