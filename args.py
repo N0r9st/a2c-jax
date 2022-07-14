@@ -106,7 +106,7 @@ def parse_args():
     parser.add_argument('--q-function', type=str, default="QFunction")
     parser.add_argument('--delay', type=int, default=0)
     parser.add_argument('--load-rms', action='store_true', default=False)
-
+    parser.add_argument('--lambdaa', type=float, default=1.)
 
     args = parser.parse_args()
     return args
@@ -231,7 +231,7 @@ def update(args, cmd_args):
         q_loss_coef=cmd_args.q_loss_coef,
         alpha=cmd_args.alpha,
         gamma=cmd_args.gamma,
-        lambda_=args['lambda_'],
+        lambda_=cmd_args.lambdaa,
         M=args['M'],
         type=args['type'],
         gradstop=cmd_args.gradstop,
