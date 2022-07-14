@@ -16,7 +16,7 @@ from jax_a2c.distributions import sample_action_from_normal as sample_action
 from jax_a2c.env_utils import make_vec_env, DummySubprocVecEnv, run_workers
 from jax_a2c.evaluation import eval
 from jax_a2c.policy import DiagGaussianPolicy, QFunction, DiagGaussianStateDependentPolicy, VFunction, DGPolicy
-from jax_a2c.utils import (Experience, collect_experience_manyenvs, collect_experience_withstate, create_train_state, select_random_states,
+from jax_a2c.utils import (Experience, collect_experience_manyenvs, collect_experience_withstate, create_train_state, np_process_single_mc_rollout_output_fulldata, select_random_states,
                            concat_trajectories, process_base_rollout_output,
                            stack_experiences, process_rollout_output,  process_mc_rollout_output, PRF,
                            calculate_interactions_per_epoch, get_next_obs_and_dones_per_worker, stack_experiences_horisontal)
@@ -50,9 +50,7 @@ def _worker(remote, k_remotes, parent_remote, spaces, device, add_args) -> None:
 
     while True:
         try:
-            for _ in range(2):
-                args = remote.recv()
-            # policy_fn = functools.partial(_policy_fn, **(args.pop('policy_fn')))
+            args = remote.recv()
             policy_fn = functools.partial(
                 jit_value_and_policy_fn, 
                 params=args['policy_params'],
@@ -64,16 +62,27 @@ def _worker(remote, k_remotes, parent_remote, spaces, device, add_args) -> None:
                 policy_fn=policy_fn, 
                 **args['collect_experience_args'])
 
+            oar = np_process_single_mc_rollout_output_fulldata(
+                dict(
+                    rewards=experience.rewards,
+                    dones=experience.dones,
+                    bootstrapped=np.array(experience.values[-1]),
+                    observations=experience.observations,
+                    actions=experience.actions,
+                ),
+                dict(gamma=args['gamma'])
+            )
+
             out_dict = dict(
-                experience=experience,
+                oar=oar,
                 next_obs_and_dones=next_obs_and_dones,
                 start_states=start_states,
                 obs_rms=k_envs.obs_rms,
                 ret_rms=k_envs.ret_rms
 
             )
-            for _ in range(2):
-                remote.send(out_dict)
+
+            remote.send(out_dict)
         except EOFError:
             break
 
@@ -224,18 +233,17 @@ def main(args: dict):
                 collect_experience_args=collect_experience_args,
                 obs_rms=train_obs_rms,
                 ret_rms=train_ret_rms,
+                gamma=args['gamma'],
                 )
-            for _ in range(2):
-                remote.send(to_worker)
+            remote.send(to_worker)
         new_start_collection_data = []
-        exp_list = []
+        oar_list = []
         obs_rms_list = []
         ret_rms_list = []
         for remote in remotes:
             prngkey, _ = jax.random.split(prngkey)
-            for _ in range(2):
-                worker_return_dict = remote.recv()
-            exp_list.append(worker_return_dict['experience'])
+            worker_return_dict = remote.recv()
+            oar_list.append(worker_return_dict['oar'])
             new_start_collection_data.append(
                 (worker_return_dict['next_obs_and_dones'], worker_return_dict['start_states'])
                 )
@@ -245,11 +253,7 @@ def main(args: dict):
         start_collection_data = new_start_collection_data
         train_obs_rms = obs_rms_list[0]
         train_ret_rms = ret_rms_list[0]
-        
-        original_experience = stack_experiences_horisontal(exp_list)
-
-        base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
-
+        base_oar = jax.tree_util.tree_map(lambda *x: jnp.concatenate(x, axis=0), *oar_list)
         prngkey, _ = jax.random.split(prngkey)
         p_train_data_dict = {
             'oar': base_oar,
