@@ -159,20 +159,6 @@ def main(args: dict):
     next_obs_and_dones = (next_obs, np.array(next_obs.shape[0]*[False]))
 
 
-    # -----------------------------------------
-    #            STARTING WORKERS
-    #-----------------------------------------
-    if args['type'] != 'standart':
-        if args['num_workers'] is not None:
-            add_args = {'policy_fn': _apply_policy_fn, "v_fn": state.v_fn}
-            remotes = run_workers(
-                _worker, 
-                k_envs_fn, 
-                args['num_workers'], 
-                (envs.observation_space, envs.action_space),
-                ctx,
-                split_between_devices=args['split_between_devices'],
-                add_args=add_args)
     # ------------------------------------------
     # DATA FROM PREF RUN
     from flax.core import unfreeze, freeze
@@ -239,185 +225,38 @@ def main(args: dict):
         #------------------------------------------------
         #              WORKER ROLLOUTS
         #------------------------------------------------
-        if args['type'] != 'standart':
-            exp_list = []
-            add_args_list = []
-            not_selected_observations_list = []
-            sampled_exp_list = []
-            sampling_masks = []
-            no_sampling_masks = []
-
-            for remote in remotes:
-
-                prngkey, _ = jax.random.split(prngkey)
-                next_obs_and_dones, experience = collect_experience(
-                    prngkey, 
-                    next_obs_and_dones, 
-                    envs, 
-                    num_steps=args['num_steps']//args['num_workers'], 
-                    policy_fn=ready_value_and_policy_fn)
-                exp_list.append(experience)
-
-                
-                
-                add_args = {}
-                if args['sampling_type']=='adv':
-                    base_traj_part = process_experience(experience, gamma=args['gamma'], lambda_=args['lambda_'])
-                    advs = base_traj_part[3].reshape((args['num_steps']//args['num_workers'], args['num_envs']))
-                    add_args['advantages'] = advs
-                    add_args['sampling_prob_temp'] = args['sampling_prob_temp']
-                    
-                sampled_exp, not_selected_observations, sampling_mask, no_sampling_mask = select_random_states(
-                    prngkey, args['n_samples']//args['num_workers'], 
-                    experience, type=args['sampling_type'], **add_args)
-
-                sampling_masks.append(sampling_mask)
-                no_sampling_masks.append(no_sampling_mask)
-                not_selected_observations_list.append(not_selected_observations)
-                sampled_exp_list.append(sampled_exp)
-
-                add_args_list.append(add_args)
-                sampled_exp = Experience(
-                    observations=sampled_exp.observations,
-                    actions=None,
-                    rewards=None,
-                    values=None,
-                    dones=sampled_exp.dones,
-                    states=sampled_exp.states,
-                    next_observations= None,
-                )
-                prngkey, _ = jax.random.split(prngkey)
-                to_worker = dict(
-                    prngkey=prngkey,
-                    experience=sampled_exp,
-                    gamma=args['gamma'],
-                    policy_fn=dict(
-                        params=state.params['policy_params'], 
-                        determenistic=args['km_determenistic']),
-                    # v_fn=dict(params=state.params["vf_params"]),
-                    vf_params=state.params["vf_params"],
-                    max_steps=args['L'],
-                    K=args['K'],
-                    M=args['M'],
-                    train_obs_rms=train_obs_rms,
-                    train_ret_rms=train_ret_rms,
-                    firstrandom=False,
-                    process_full=args['process_full'],
-                    )
-                remote.send(to_worker)
-            original_experience = stack_experiences(exp_list)
-
-            mc_oar = jax.tree_util.tree_map(
-                lambda *dicts: jnp.concatenate(dicts, axis=0),
-                *[remote.recv() for remote in remotes],
-                )
-
-            #----------------------------------------------------------------
-            #                       NEGATIVES SAMPLING
-            #----------------------------------------------------------------
-            negative_oar = None
-            if args['negative_sampling']:
-                for remote, add_args, sampled_exp in zip(remotes, add_args_list, sampled_exp_list):
-                    prngkey, _ = jax.random.split(prngkey)
-                    to_worker = dict(
-                        prngkey=prngkey,
-                        experience=sampled_exp,
-                        gamma=args['gamma'],
-                        policy_fn=dict(
-                            params=state.params['policy_params'], 
-                            determenistic=args['km_determenistic']),
-                        # v_fn=dict(params=state.params["vf_params"]),
-                        vf_params=state.params["vf_params"],
-                        max_steps=args['L'],
-                        K=args['K'],
-                        M=args['M'],
-                        train_obs_rms=train_obs_rms,
-                        train_ret_rms=train_ret_rms,
-                        firstrandom=True,
-                        process_full=args['process_full'],
-                        )
-                    remote.send(to_worker)
-                # negative_exp = jax.tree_util.tree_map(lambda *dicts: jnp.stack(dicts),
-                #     *[remote.recv() for remote in remotes]
-                #     )
-                # negative_oar = process_mc_rollout_output(
-                #     state.apply_fn, state.params, 
-                #     negative_exp, args['train_constants'])
-                negative_oar = jax.tree_util.tree_map(lambda *dicts: jnp.concatenate(dicts, axis=0),
-                    *[remote.recv() for remote in remotes]
-                    )
-            #----------------------------------------------------------------
-            #----------------------------------------------------------------
-        else:
-            prngkey, _ = jax.random.split(prngkey)
-            next_obs_and_dones, original_experience = collect_experience(
-                prngkey, 
-                next_obs_and_dones, 
-                envs, 
-                num_steps=args['num_steps'], 
-                policy_fn=ready_value_and_policy_fn,)
         
-        base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
-
-        if args['type'] != 'standart':
-            # mc_oar = process_mc_rollout_output(state.apply_fn, state.params, mc_experience, args['train_constants'])
-            oar = dict(
-                observations=jnp.concatenate((base_oar['observations'], mc_oar['observations']), axis=0),
-                actions=jnp.concatenate((base_oar['actions'], mc_oar['actions']), axis=0),
-                returns=jnp.concatenate((base_oar['returns'], mc_oar['returns']), axis=0),
-                )
-            not_sampled_observations = jnp.concatenate(not_selected_observations_list, axis=0)
-        else:
-            negative_oar = None
-            mc_oar = None
-            oar = base_oar
-            not_sampled_observations = base_oar['observations'].reshape((-1, base_oar['observations'].shape[-1]))
-            sampling_masks = None
-            no_sampling_masks = None
-
+        prngkey, _ = jax.random.split(prngkey)
+        next_obs_and_dones, original_experience = collect_experience(
+            prngkey, 
+            next_obs_and_dones, 
+            envs, 
+            num_steps=args['num_steps'], 
+            policy_fn=ready_value_and_policy_fn,)
         
-
-        if args['train_constants']['q_updates'] is not None:
-            sampling_masks = jnp.stack(sampling_masks)
-            no_sampling_masks = jnp.stack(no_sampling_masks)
-            prngkey, _ = jax.random.split(prngkey)
-            q_train_oar, q_test_oar = general_train_test_split(
-                base_oar=base_oar,
-                mc_oar=mc_oar,
-                negative_oar=negative_oar,
-                sampling_masks=sampling_masks,
-                no_sampling_masks=no_sampling_masks,
-                prngkey=prngkey,
-                test_ratio=args['train_constants']['qf_test_ratio'],
-                k=args['K'],
-                nw=args['num_workers'],
-                num_steps=args['num_steps'],
-                num_envs=args['num_envs'],
-                use_base_traj_for_q=args['use_base_traj_for_q'],
-                split_type=args['split_type'],          
+        # base_oar = process_base_rollout_output(state.apply_fn, state.params, original_experience, args['train_constants'])
+        def concat_first_two_dims(x):
+            return x.reshape(
+                (x.shape[0]*x.shape[1], ) + x.shape[2:]
             )
-
-            args['train_constants'] = args['train_constants'].copy({
-                'qf_update_batch_size':args['train_constants']['qf_update_batch_size'],
-                'q_train_len':len(q_train_oar['observations']),
-                })
-            state, (q_loss, q_loss_dict) = q_step(
-                state, 
-                q_train_oar, q_test_oar, # (Experience(original trajectory), List[dicts](kml trajs))
-                prngkey,
-                constant_params=args['train_constants'], jit_q_fn=jit_q_fn
-                )
-            state = state.replace(step=current_update)
-        else:
-            q_loss_dict = {}
-
+        observations = concat_first_two_dims(original_experience.observations)
+        actions = concat_first_two_dims(original_experience.actions)
+        rewards = concat_first_two_dims(original_experience.rewards)
+        values = concat_first_two_dims(original_experience.values[-args['num_steps']:])
+        returns = rewards + args['gamma']*values
+        base_oar = dict(
+            observations=observations,
+            actions=actions,
+            returns=returns,
+        )
         prngkey, _ = jax.random.split(prngkey)
         p_train_data_dict = {
-            'oar': oar,
+            'oar': base_oar,
             'base_oar': base_oar,
-            'mc_oar': mc_oar,
-            'not_sampled_observations': not_sampled_observations,
+            'mc_oar': None,
+            'not_sampled_observations': None,
             }
+
         state, (loss, loss_dict) = p_step(
             state, 
             p_train_data_dict,

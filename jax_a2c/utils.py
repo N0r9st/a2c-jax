@@ -173,28 +173,6 @@ def process_experience(
         lambda x: np.reshape(x, (trajectory_len,) + x.shape[2:]), trajectories))
     return trajectories
 
-@functools.partial(jax.jit, static_argnums=(1,2))
-def process_oarew_to_oaret(
-    rollout_data: dict, 
-    gamma: float = .99, 
-    lambda_: float = 1.,
-    ):
-    observations = rollout_data["observations"]
-    actions = rollout_data["actions"]
-    rewards = rollout_data["rewards"]
-    values = rollout_data["values"]
-    dones = rollout_data["dones"]
-
-    dones = jnp.logical_not(dones).astype(float)
-    advantages = gae_advantages(rewards, dones, values, gamma, lambda_)
-    returns = advantages + values[:-1]
-    trajectories = (observations, actions, returns, advantages)
-    num_agents, actor_steps = observations.shape[:2]
-    trajectory_len = num_agents * actor_steps
-    trajectories = tuple(map(
-        lambda x: np.reshape(x, (trajectory_len,) + x.shape[2:]), trajectories))
-    return trajectories
-
 
 @functools.partial(jax.jit, static_argnums=(1,3,4,5,6))
 def process_experience_with_entropy(
